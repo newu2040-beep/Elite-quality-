@@ -36,7 +36,7 @@ class ExampleRobolectricTest {
         )
         val matrix = ColorFilterEngine.createColorMatrix(adj)
         assertNotNull(matrix)
-        assertEquals(20, matrix.values.size)
+        assertEquals(20, matrix.array.size)
     }
 
     @Test

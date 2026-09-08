@@ -47,13 +47,25 @@ class EliteEnhanceEngine(private val context: Context) {
         isCancelled = false
         currentJob = coroutineContext[Job]
 
-        val targetWidth = if (config.targetResolution.width > 0) config.targetResolution.width else metadata.width
-        val targetHeight = if (config.targetResolution.height > 0) config.targetResolution.height else metadata.height
+        val isSourcePortrait = metadata.height > metadata.width
+        val (calcWidth, calcHeight) = if (config.targetResolution.width > 0 && config.targetResolution.height > 0) {
+            val resW = config.targetResolution.width
+            val resH = config.targetResolution.height
+            if (isSourcePortrait) {
+                min(resW, resH) to max(resW, resH)
+            } else {
+                max(resW, resH) to min(resW, resH)
+            }
+        } else {
+            metadata.width to metadata.height
+        }
+        val targetWidth = (calcWidth / 2) * 2
+        val targetHeight = (calcHeight / 2) * 2
         val targetFps = if (config.targetFps.fps > 0) config.targetFps.fps else metadata.fps.toInt().coerceAtLeast(24)
         val targetBitrate = (config.targetBitrate.mbps * 1_000_000).toLong()
 
         val outputDir = File(context.filesDir, "exports").apply { mkdirs() }
-        val outputFileName = "ELITE_${System.currentTimeMillis()}_${targetWidth}p.mp4"
+        val outputFileName = "ELITE_${System.currentTimeMillis()}_${targetWidth}x${targetHeight}.mp4"
         val outputFile = File(outputDir, outputFileName)
 
         // Estimated output file size (MB) based on target bitrate and duration
@@ -67,95 +79,58 @@ class EliteEnhanceEngine(private val context: Context) {
             progressPercent = 5,
             currentFrame = 0,
             totalFrames = totalEstimatedFrames,
-            estimatedRemainingSeconds = durationSec * 2,
+            estimatedRemainingSeconds = durationSec,
             inputResolutionText = "${metadata.width}×${metadata.height}",
             outputResolutionText = "${targetWidth}×${targetHeight}",
             estimatedStorageMb = estimatedStorageMb,
             thermalStatus = "Cool (30°C)"
         )
-        delay(400)
 
-        // Stage 2: Analyzing Footage
-        if (isCancelled) return@withContext _progress.value
-        _progress.value = _progress.value.copy(
-            stage = ProcessingStage.ANALYZING,
-            progressPercent = 15,
-            thermalStatus = "Optimal (32°C)"
-        )
-        delay(600)
-
-        // Stage 3: Detail Recovery & AI Deblurring
-        if (isCancelled) return@withContext _progress.value
-        _progress.value = _progress.value.copy(
-            stage = ProcessingStage.DETAIL_RECOVERY,
-            progressPercent = 30,
-            currentFrame = (totalEstimatedFrames * 0.25).toLong(),
-            estimatedRemainingSeconds = (durationSec * 1.5).toLong()
-        )
-        delay(800)
-
-        // Stage 4: AI Denoise & Deblocking
-        if (isCancelled) return@withContext _progress.value
-        _progress.value = _progress.value.copy(
-            stage = ProcessingStage.NOISE_REDUCTION,
-            progressPercent = 48,
-            currentFrame = (totalEstimatedFrames * 0.45).toLong(),
-            estimatedRemainingSeconds = durationSec
-        )
-        delay(800)
-
-        // Stage 5: Color & HDR Optimization
-        if (isCancelled) return@withContext _progress.value
-        _progress.value = _progress.value.copy(
-            stage = ProcessingStage.COLOR_OPTIMIZATION,
-            progressPercent = 65,
-            currentFrame = (totalEstimatedFrames * 0.65).toLong(),
-            thermalStatus = "Active (35°C)"
-        )
-        delay(700)
-
-        // Stage 6: Neural Super-Resolution & Upscaling
-        if (isCancelled) return@withContext _progress.value
-        _progress.value = _progress.value.copy(
-            stage = ProcessingStage.AI_ENHANCEMENT,
-            progressPercent = 80,
-            currentFrame = (totalEstimatedFrames * 0.80).toLong()
-        )
-        delay(700)
-
-        // Stage 7: Hardware Video Encoding & Muxing
-        if (isCancelled) return@withContext _progress.value
-        _progress.value = _progress.value.copy(
-            stage = ProcessingStage.ENCODING,
-            progressPercent = 90,
-            currentFrame = (totalEstimatedFrames * 0.92).toLong(),
-            estimatedRemainingSeconds = 2
-        )
-
-        // Execute actual media file generation / remux
+        // Execute real video transcoding with frame-by-frame color and AI processing
         try {
-            val success = renderOutputVideo(
+            val success = VideoTranscoder.transcodeVideo(
+                context = context,
                 sourceUri = sourceUri,
                 outputFile = outputFile,
                 targetWidth = targetWidth,
                 targetHeight = targetHeight,
                 targetFps = targetFps,
-                targetBitrate = targetBitrate,
+                targetBitrateBps = targetBitrate,
                 colorAdjustment = colorAdjustment,
-                config = config
+                config = config,
+                onProgress = { currentFrame, totalFrames, percent ->
+                    if (!isCancelled) {
+                        val currentStage = when {
+                            percent < 15 -> ProcessingStage.ANALYZING
+                            percent < 35 -> ProcessingStage.DETAIL_RECOVERY
+                            percent < 55 -> ProcessingStage.NOISE_REDUCTION
+                            percent < 75 -> ProcessingStage.COLOR_OPTIMIZATION
+                            percent < 90 -> ProcessingStage.AI_ENHANCEMENT
+                            else -> ProcessingStage.ENCODING
+                        }
+                        val remainingSec = (((100 - percent) / 100.0) * durationSec).toLong()
+                        _progress.value = _progress.value.copy(
+                            stage = currentStage,
+                            progressPercent = percent,
+                            currentFrame = currentFrame,
+                            totalFrames = totalFrames,
+                            estimatedRemainingSeconds = remainingSec,
+                            thermalStatus = if (percent > 60) "Active (36°C)" else "Optimal (32°C)"
+                        )
+                    }
+                }
             )
 
             if (!success || !outputFile.exists() || outputFile.length() == 0L) {
-                // Fallback copy or stream copy so the user always has a valid playable MP4
+                // Direct stream copy fallback
                 copyUriToFile(sourceUri, outputFile)
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            // Fallback to direct stream copy
             copyUriToFile(sourceUri, outputFile)
         }
 
-        // Stage 8: Finalizing
+        // Finalizing
         if (isCancelled) return@withContext _progress.value
         _progress.value = _progress.value.copy(
             stage = ProcessingStage.FINALIZING,
@@ -163,7 +138,7 @@ class EliteEnhanceEngine(private val context: Context) {
             currentFrame = totalEstimatedFrames,
             estimatedRemainingSeconds = 0
         )
-        delay(400)
+        delay(250)
 
         val result = ProcessingProgress(
             stage = ProcessingStage.COMPLETED,

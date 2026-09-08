@@ -58,7 +58,7 @@ fun EditorScreen(
     var showEnhanceConfigDialog by remember { mutableStateOf(false) }
 
     val categories = listOf(
-        "Adjust", "Color", "Curves", "Wheels", "Detail", "AI", "Presets", "Crop", "Speed", "Audio"
+        "Adjust", "Color", "HSL", "RGB", "Curves", "Wheels", "LUTs", "Detail", "AI", "Presets", "Crop", "Speed", "Audio"
     )
 
     Scaffold(
@@ -203,6 +203,7 @@ fun EditorScreen(
                     comparisonMode = comparisonMode,
                     splitFraction = splitFraction,
                     onSplitFractionChange = { viewModel.setSplitFraction(it) },
+                    enhancementConfig = config,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -331,9 +332,12 @@ fun EditorScreen(
                 when (activeCategory) {
                     "Adjust" -> AdjustPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
                     "Color" -> ColorPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
+                    "HSL" -> HslPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
+                    "RGB" -> RgbPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
                     "Curves" -> CurvesPanel(colorAdjustment, viewModel, compact.curveGraphHeight)
                     "Wheels" -> WheelsPanel(colorAdjustment, viewModel, compact.wheelSize)
-                    "Detail" -> DetailPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
+                    "LUTs" -> LutsPanel(colorAdjustment, viewModel)
+                    "Detail" -> DetailPanel(colorAdjustment, config, viewModel, compact.sliderVerticalPadding)
                     "AI" -> AiEnhancePanel(config, viewModel, compact.sliderVerticalPadding)
                     "Presets" -> PresetsPanel(allPresets, viewModel, compact.isCompact)
                     "Crop" -> CropPanel(config, viewModel)
@@ -407,20 +411,133 @@ fun ColorPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: an
 }
 
 @Composable
-fun CurvesPanel(adj: ColorAdjustment, viewModel: MainViewModel, graphHeight: androidx.compose.ui.unit.Dp = 130.dp) {
+fun HslPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: androidx.compose.ui.unit.Dp = 4.dp) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-        CurvesGraphView(
-            curveValue = adj.curveMaster,
-            onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveMaster = it) } },
-            channelColor = Color.White,
-            channelName = "RGB Master Curve",
-            graphHeight = graphHeight
+        ValueSlider("Hue Shift", adj.hueShift, { viewModel.updateColorAdjustment { c -> c.copy(hueShift = it) } }, valueRange = -180f..180f, verticalPadding = sliderPadding)
+        ValueSlider("HSL Saturation", adj.hslSaturation, { viewModel.updateColorAdjustment { c -> c.copy(hslSaturation = it) } }, verticalPadding = sliderPadding)
+        ValueSlider("HSL Luminance", adj.hslLuminance, { viewModel.updateColorAdjustment { c -> c.copy(hslLuminance = it) } }, verticalPadding = sliderPadding)
+    }
+}
+
+@Composable
+fun RgbPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: androidx.compose.ui.unit.Dp = 4.dp) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        ValueSlider("Red Gain", adj.rgbRed, { viewModel.updateColorAdjustment { c -> c.copy(rgbRed = it) } }, verticalPadding = sliderPadding)
+        ValueSlider("Green Gain", adj.rgbGreen, { viewModel.updateColorAdjustment { c -> c.copy(rgbGreen = it) } }, verticalPadding = sliderPadding)
+        ValueSlider("Blue Gain", adj.rgbBlue, { viewModel.updateColorAdjustment { c -> c.copy(rgbBlue = it) } }, verticalPadding = sliderPadding)
+    }
+}
+
+@Composable
+fun LutsPanel(adj: ColorAdjustment, viewModel: MainViewModel) {
+    val luts = listOf(
+        0 to "None (Natural)",
+        1 to "Teal & Orange",
+        2 to "Moody Film",
+        3 to "Cyberpunk Neon",
+        4 to "Clean Arri",
+        5 to "Vintage 70s",
+        6 to "Bleach Bypass",
+        7 to "Noir B&W"
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        ValueSlider(
+            label = "LUT Intensity",
+            value = adj.lutIntensity,
+            onValueChange = { viewModel.updateColorAdjustment { c -> c.copy(lutIntensity = it) } },
+            valueRange = 0f..100f
         )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            luts.forEach { (idx, name) ->
+                val isSelected = adj.lutIndex == idx
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { viewModel.updateColorAdjustment { c -> c.copy(lutIndex = idx) } },
+                    label = { Text(name, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CurvesPanel(adj: ColorAdjustment, viewModel: MainViewModel, graphHeight: androidx.compose.ui.unit.Dp = 130.dp) {
+    var selectedChannel by remember { mutableStateOf("Master") }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Master", "Red", "Green", "Blue").forEach { channel ->
+                val isSelected = selectedChannel == channel
+                val chipColor = when (channel) {
+                    "Red" -> Color(0xFFEF5350)
+                    "Green" -> Color(0xFF66BB6A)
+                    "Blue" -> Color(0xFF42A5F5)
+                    else -> Color.White
+                }
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { selectedChannel = channel },
+                    label = { Text(channel, color = if (isSelected) Color.White else chipColor, fontWeight = FontWeight.Bold) }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        when (selectedChannel) {
+            "Master" -> CurvesGraphView(
+                curveValue = adj.curveMaster,
+                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveMaster = it) } },
+                channelColor = Color.White,
+                channelName = "RGB Master Curve",
+                graphHeight = graphHeight
+            )
+            "Red" -> CurvesGraphView(
+                curveValue = adj.curveRed,
+                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveRed = it) } },
+                channelColor = Color(0xFFEF5350),
+                channelName = "Red Channel Curve",
+                graphHeight = graphHeight
+            )
+            "Green" -> CurvesGraphView(
+                curveValue = adj.curveGreen,
+                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveGreen = it) } },
+                channelColor = Color(0xFF66BB6A),
+                channelName = "Green Channel Curve",
+                graphHeight = graphHeight
+            )
+            "Blue" -> CurvesGraphView(
+                curveValue = adj.curveBlue,
+                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveBlue = it) } },
+                channelColor = Color(0xFF42A5F5),
+                channelName = "Blue Channel Curve",
+                graphHeight = graphHeight
+            )
+        }
     }
 }
 
@@ -464,7 +581,7 @@ fun WheelsPanel(adj: ColorAdjustment, viewModel: MainViewModel, wheelSize: andro
 }
 
 @Composable
-fun DetailPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: androidx.compose.ui.unit.Dp = 4.dp) {
+fun DetailPanel(adj: ColorAdjustment, config: EnhancementConfig, viewModel: MainViewModel, sliderPadding: androidx.compose.ui.unit.Dp = 4.dp) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -473,6 +590,7 @@ fun DetailPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: a
     ) {
         ValueSlider("Sharpness", adj.sharpness, { viewModel.updateColorAdjustment { c -> c.copy(sharpness = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
         ValueSlider("Clarity", adj.clarity, { viewModel.updateColorAdjustment { c -> c.copy(clarity = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
+        ValueSlider("Denoise", config.aiDenoise, { viewModel.updateEnhancementConfig { c -> c.copy(aiDenoise = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
     }
 }
 
