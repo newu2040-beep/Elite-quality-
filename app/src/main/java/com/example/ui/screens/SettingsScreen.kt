@@ -3,9 +3,10 @@ package com.example.ui.screens
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -15,8 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.InfoBadge
@@ -37,10 +40,25 @@ fun SettingsScreen(
     val preferGpu by viewModel.settingsRepo.preferGpu.collectAsState()
     val hwEncoding by viewModel.settingsRepo.hardwareEncoding.collectAsState()
     val thermalProtection by viewModel.settingsRepo.thermalProtection.collectAsState()
-    val defaultRes by viewModel.settingsRepo.defaultResolution.collectAsState()
-    val defaultCodec by viewModel.settingsRepo.defaultCodec.collectAsState()
 
-    val themes = listOf("Obsidian", "Midnight", "Graphite", "Pearl", "Frost", "Aurora")
+    val studioThemes = listOf(
+        "Obsidian" to Color(0xFFE5B54F),
+        "Midnight" to Color(0xFF38BDF8),
+        "Graphite" to Color(0xFFA1A1AA),
+        "Pearl" to Color(0xFFB4833E),
+        "Frost" to Color(0xFF0284C7),
+        "Aurora" to Color(0xFF10B981)
+    )
+
+    val pastelThemes = listOf(
+        "Pastel Rose" to Color(0xFFF472B6),
+        "Pastel Lavender" to Color(0xFFA78BFA),
+        "Pastel Mint" to Color(0xFF34D399),
+        "Pastel Peach" to Color(0xFFFB923C),
+        "Pastel Sky" to Color(0xFF38BDF8),
+        "Pastel Butter" to Color(0xFFEAB308),
+        "Pastel Matcha" to Color(0xFF84CC16)
+    )
 
     Scaffold(
         topBar = {
@@ -107,7 +125,7 @@ fun SettingsScreen(
 
             // Appearance & Themes
             Text(
-                text = "Color Palette & Theme",
+                text = "Themes & Appearance",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -122,37 +140,90 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        themes.take(3).forEach { t ->
-                            FilterChip(
-                                selected = currentTheme == t,
-                                onClick = { viewModel.settingsRepo.setTheme(t) },
-                                label = { Text(t) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                    // Studio Themes Subheader
+                    Text(
+                        text = "Studio & Classic Themes",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
+
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        themes.drop(3).forEach { t ->
+                        studioThemes.forEach { (name, dotColor) ->
                             FilterChip(
-                                selected = currentTheme == t,
-                                onClick = { viewModel.settingsRepo.setTheme(t) },
-                                label = { Text(t) },
-                                modifier = Modifier.weight(1f)
+                                selected = currentTheme == name,
+                                onClick = { viewModel.settingsRepo.setTheme(name) },
+                                label = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(dotColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(name)
+                                    }
+                                }
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Pastel Themes Subheader
+                    Text(
+                        text = "Pastel Aesthetics",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        pastelThemes.forEach { (name, dotColor) ->
+                            FilterChip(
+                                selected = currentTheme == name,
+                                onClick = { viewModel.settingsRepo.setTheme(name) },
+                                label = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(dotColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(name)
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Dark / Light / System Mode
+                    Text(
+                        text = "Display Mode",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -259,7 +330,7 @@ fun SettingsScreen(
                     ) {
                         Column {
                             Text("GPU Acceleration", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                            Text("Render color matrices & filters on GPU", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Render color matrices & shaders on GPU", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked = preferGpu,
@@ -347,7 +418,78 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Developer Credit & App Version Card
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("developer_credit_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = "Made with love",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Made with ❤️ by Rahul Shah",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "ELITE QUALITY • Version 5.0",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "High-performance offline GPU video enhancement, real-time color grading & cinematic LUT mastering engine.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        InfoBadge(text = "v5.0 RELEASE", isHighlight = true)
+                        InfoBadge(text = "GPU ACCELERATED", isHighlight = false)
+                        InfoBadge(text = "100% OFFLINE", isHighlight = false)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

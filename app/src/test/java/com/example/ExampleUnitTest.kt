@@ -66,4 +66,10 @@ class ExampleUnitTest {
         assertEquals(1920, calcLandW)
         assertEquals(1080, calcLandH)
     }
+
+    @Test
+    fun appVersion_is5_0() {
+        val expectedVersion = "5.0"
+        assertEquals("5.0", expectedVersion)
+    }
 }

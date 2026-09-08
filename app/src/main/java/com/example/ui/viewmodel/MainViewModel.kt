@@ -12,11 +12,7 @@ import com.example.data.db.PresetEntity
 import com.example.data.db.ProjectEntity
 import com.example.data.model.*
 import com.example.data.repository.*
-import com.example.engine.ColorFilterEngine
-import com.example.engine.EliteEnhanceEngine
-import com.example.engine.NotificationHelper
-import com.example.engine.VideoExportHelper
-import com.example.engine.VideoMetadataExtractor
+import com.example.engine.*
 import com.example.ui.components.ComparisonMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -61,6 +57,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentProjectId = MutableStateFlow<Long?>(null)
     val currentProjectId: StateFlow<Long?> = _currentProjectId.asStateFlow()
 
+    // GPU Adjustment Undo/Redo Manager
+    val undoRedoManager = AdjustmentUndoRedoManager()
+    val canUndo: StateFlow<Boolean> = undoRedoManager.canUndo
+    val canRedo: StateFlow<Boolean> = undoRedoManager.canRedo
+    val undoStack: StateFlow<List<AdjustmentSnapshot>> = undoRedoManager.undoStack
+    val redoStack: StateFlow<List<AdjustmentSnapshot>> = undoRedoManager.redoStack
+
     // Last Export & Auto-Save
     private val _lastExportedFile = MutableStateFlow<File?>(null)
     val lastExportedFile: StateFlow<File?> = _lastExportedFile.asStateFlow()
@@ -69,6 +72,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val autoSavedToGallery: StateFlow<Boolean> = _autoSavedToGallery.asStateFlow()
 
     val processingProgress: StateFlow<ProcessingProgress> = enhanceEngine.progress
+
+    // Selected Export for in-app preview dialog/player
+    private val _selectedExportPreview = MutableStateFlow<ExportEntity?>(null)
+    val selectedExportPreview: StateFlow<ExportEntity?> = _selectedExportPreview.asStateFlow()
 
     // Real device videos loaded from MediaStore
     private val _deviceVideos = MutableStateFlow<List<DeviceVideoItem>>(emptyList())
@@ -164,6 +171,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _currentMetadata.value = meta
             val thumb = metadataExtractor.extractThumbnail(uri)
 
+            // Reset adjustments and initialize undo/redo manager
+            val initialAdj = ColorAdjustment()
+            _colorAdjustment.value = initialAdj
+            undoRedoManager.initializeWithState(initialAdj)
+
             // Create or save project in Room
             val projId = projectRepo.saveProject(
                 ProjectEntity(
@@ -185,8 +197,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateColorAdjustment(update: (ColorAdjustment) -> ColorAdjustment) {
-        _colorAdjustment.value = update(_colorAdjustment.value)
+    fun updateColorAdjustment(
+        paramName: String? = null,
+        description: String = "Adjust Parameter",
+        update: (ColorAdjustment) -> ColorAdjustment
+    ) {
+        val next = update(_colorAdjustment.value)
+        _colorAdjustment.value = next
+        undoRedoManager.recordAdjustment(next, description, paramName)
+    }
+
+    fun undoAdjustment() {
+        val prev = undoRedoManager.undo()
+        if (prev != null) {
+            _colorAdjustment.value = prev
+        }
+    }
+
+    fun redoAdjustment() {
+        val next = undoRedoManager.redo()
+        if (next != null) {
+            _colorAdjustment.value = next
+        }
+    }
+
+    fun revertParameter(paramKey: String) {
+        val reverted = undoRedoManager.revertParameter(_colorAdjustment.value, paramKey)
+        _colorAdjustment.value = reverted
+    }
+
+    fun jumpToHistoryStep(index: Int) {
+        val state = undoRedoManager.jumpToStep(index)
+        if (state != null) {
+            _colorAdjustment.value = state
+        }
     }
 
     fun updateEnhancementConfig(update: (EnhancementConfig) -> EnhancementConfig) {
@@ -206,7 +250,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun applyPreset(preset: PresetEntity) {
-        _colorAdjustment.value = _colorAdjustment.value.copy(
+        val newAdj = _colorAdjustment.value.copy(
             exposure = preset.exposure,
             contrast = preset.contrast,
             highlights = preset.highlights,
@@ -219,6 +263,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             clarity = preset.clarity,
             presetName = preset.name
         )
+        _colorAdjustment.value = newAdj
+        undoRedoManager.recordAdjustment(newAdj, "Applied Preset: ${preset.name}", forceNewStep = true)
+
         _enhancementConfig.value = _enhancementConfig.value.copy(
             aiDenoise = preset.aiDenoise,
             aiSharpen = preset.aiSharpen,
@@ -227,7 +274,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetColorAdjustment() {
-        _colorAdjustment.value = ColorAdjustment()
+        val resetAdj = ColorAdjustment()
+        _colorAdjustment.value = resetAdj
+        undoRedoManager.recordAdjustment(resetAdj, "Reset All Adjustments", forceNewStep = true)
     }
 
     fun startEliteEnhancement(onComplete: (File) -> Unit) {
@@ -265,7 +314,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     savedToGallery = autoSaved
                 )
 
-                // Record in Room Database
+                // Record in Room Database with exact real-time file attributes
                 val exportId = exportRepo.saveExport(
                     ExportEntity(
                         projectId = _currentProjectId.value ?: 0L,
@@ -311,9 +360,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         VideoExportHelper.shareVideo(getApplication(), file.absolutePath)
     }
 
+    fun shareExport(export: ExportEntity) {
+        val file = File(export.outputFilePath)
+        if (file.exists()) {
+            VideoExportHelper.shareVideo(getApplication(), file.absolutePath)
+        } else if (export.outputUri.isNotEmpty()) {
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "video/*"
+                putExtra(android.content.Intent.EXTRA_STREAM, Uri.parse(export.outputUri))
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            getApplication<Application>().startActivity(
+                android.content.Intent.createChooser(intent, "Share Exported Video").apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+        }
+    }
+
     fun openLastExport() {
         val file = _lastExportedFile.value ?: return
         VideoExportHelper.openVideo(getApplication(), file.absolutePath)
+    }
+
+    fun openExport(export: ExportEntity) {
+        val file = File(export.outputFilePath)
+        if (file.exists()) {
+            VideoExportHelper.openVideo(getApplication(), file.absolutePath)
+        } else if (export.outputUri.isNotEmpty()) {
+            VideoExportHelper.openVideo(getApplication(), export.outputUri)
+        }
+    }
+
+    fun setExportPreview(export: ExportEntity?) {
+        _selectedExportPreview.value = export
+    }
+
+    fun deleteExport(exportId: Long) {
+        viewModelScope.launch {
+            exportRepo.deleteExport(exportId)
+            refreshStorageStats()
+        }
     }
 
     fun saveLastExportToGallery(onSaved: (Boolean) -> Unit) {

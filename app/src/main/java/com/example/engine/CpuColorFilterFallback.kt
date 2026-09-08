@@ -203,11 +203,19 @@ object CpuColorFilterFallback {
                                         lutB = b * 0.4f + blendB * 0.6f
                                     }
                                     7 -> { // Noir B&W
-                                        val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                                        val cLum = ((lum - 0.5f) * 1.45f + 0.5f).coerceIn(0f, 1f)
+                                        val lum = 0.299f * r + 0.587f * g + 0.114f * b
+                                        val cLum = ((lum - 0.5f) * 1.38f + 0.5f).coerceIn(0f, 1f)
                                         lutR = cLum
                                         lutG = cLum
                                         lutB = cLum
+                                    }
+                                    8 -> { // Sunset Gold
+                                        lutR = (r * 1.30f + 0.05f).coerceIn(0f, 1f)
+                                        lutG = (g * 1.06f + 0.01f).coerceIn(0f, 1f)
+                                        lutB = (b * 0.70f).coerceIn(0f, 1f)
+                                        lutR = ((lutR - 0.5f) * 1.15f + 0.5f).coerceIn(0f, 1f)
+                                        lutG = ((lutG - 0.5f) * 1.15f + 0.5f).coerceIn(0f, 1f)
+                                        lutB = ((lutB - 0.5f) * 1.15f + 0.5f).coerceIn(0f, 1f)
                                     }
                                 }
                                 r = r * (1f - lutWeight) + lutR * lutWeight

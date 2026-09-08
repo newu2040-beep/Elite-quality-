@@ -2,24 +2,25 @@ package com.example.ui.screens
 
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Redo
+import androidx.compose.material.icons.outlined.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,13 +29,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.db.PresetEntity
 import com.example.data.model.*
+import com.example.engine.AdjustmentSnapshot
 import com.example.ui.components.*
 import com.example.ui.viewmodel.MainViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +59,17 @@ fun EditorScreen(
     val activeCategory by viewModel.activeEditingCategory.collectAsState()
     val allPresets by viewModel.allPresets.collectAsState()
 
+    val canUndo by viewModel.canUndo.collectAsState()
+    val canRedo by viewModel.canRedo.collectAsState()
+    val undoStack by viewModel.undoStack.collectAsState()
+    val redoStack by viewModel.redoStack.collectAsState()
+
     var showInfoCard by remember { mutableStateOf(false) }
     var showEnhanceConfigDialog by remember { mutableStateOf(false) }
+    var showHistorySheet by remember { mutableStateOf(false) }
 
     val categories = listOf(
-        "Adjust", "Color", "HSL", "RGB", "Curves", "Wheels", "LUTs", "Detail", "AI", "Presets", "Crop", "Speed", "Audio"
+        "Adjust", "LUTs", "Color", "HSL", "RGB", "Curves", "Wheels", "Detail", "AI", "Presets", "Crop", "Speed", "Audio"
     )
 
     Scaffold(
@@ -95,6 +106,57 @@ fun EditorScreen(
                     }
                 },
                 actions = {
+                    // GPU Pipeline Undo Action
+                    IconButton(
+                        onClick = { viewModel.undoAdjustment() },
+                        enabled = canUndo,
+                        modifier = Modifier.testTag("editor_undo_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Undo,
+                            contentDescription = "Undo GPU Adjustment",
+                            tint = if (canUndo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                        )
+                    }
+
+                    // GPU Pipeline Redo Action
+                    IconButton(
+                        onClick = { viewModel.redoAdjustment() },
+                        enabled = canRedo,
+                        modifier = Modifier.testTag("editor_redo_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Redo,
+                            contentDescription = "Redo GPU Adjustment",
+                            tint = if (canRedo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                        )
+                    }
+
+                    // Adjustment History Timeline
+                    IconButton(
+                        onClick = { showHistorySheet = true },
+                        modifier = Modifier.testTag("editor_history_button")
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (undoStack.size > 1) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        Text("${undoStack.size - 1}")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.History,
+                                contentDescription = "Adjustment History Log",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     // Info Toggle
                     IconButton(onClick = { showInfoCard = !showInfoCard }) {
                         Icon(
@@ -228,7 +290,7 @@ fun EditorScreen(
                                 ) {
                                     Text(
                                         text = "Video Specifications",
-                                        style = if (compact.isCompact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleSmall,
+                                        style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -331,12 +393,12 @@ fun EditorScreen(
             ) {
                 when (activeCategory) {
                     "Adjust" -> AdjustPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
+                    "LUTs" -> LutsPanel(colorAdjustment, viewModel)
                     "Color" -> ColorPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
                     "HSL" -> HslPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
                     "RGB" -> RgbPanel(colorAdjustment, viewModel, compact.sliderVerticalPadding)
                     "Curves" -> CurvesPanel(colorAdjustment, viewModel, compact.curveGraphHeight)
                     "Wheels" -> WheelsPanel(colorAdjustment, viewModel, compact.wheelSize)
-                    "LUTs" -> LutsPanel(colorAdjustment, viewModel)
                     "Detail" -> DetailPanel(colorAdjustment, config, viewModel, compact.sliderVerticalPadding)
                     "AI" -> AiEnhancePanel(config, viewModel, compact.sliderVerticalPadding)
                     "Presets" -> PresetsPanel(allPresets, viewModel, compact.isCompact)
@@ -344,6 +406,152 @@ fun EditorScreen(
                     "Speed" -> SpeedPanel(config, viewModel)
                     "Audio" -> AudioPanel(metadata, config, viewModel)
                 }
+            }
+        }
+    }
+
+    // Adjustment History Modal Bottom Sheet
+    if (showHistorySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showHistorySheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "GPU Adjustment History",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Revert or jump back to any step in real-time",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    TextButton(onClick = { viewModel.resetColorAdjustment() }) {
+                        Text("Reset All", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Quick Parameter Revert Chips
+                Text("Revert Specific Parameter", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val revertableParams = listOf(
+                        "Exposure" to "exposure",
+                        "Contrast" to "contrast",
+                        "Saturation" to "saturation",
+                        "LUT" to "lut",
+                        "Temperature" to "temperature",
+                        "Curves" to "curves",
+                        "Color Wheels" to "colorwheels"
+                    )
+                    revertableParams.forEach { (label, key) ->
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.revertParameter(key)
+                                Toast.makeText(context, "Reverted $label to default", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(label, fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("Timeline (${undoStack.size} Steps)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(undoStack.reversed()) { revIdx, snapshot ->
+                        val originalIndex = undoStack.size - 1 - revIdx
+                        val isCurrent = revIdx == 0
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.jumpToHistoryStep(originalIndex)
+                                    showHistorySheet = false
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = snapshot.description,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = timeFormat.format(Date(snapshot.timestamp)),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                if (isCurrent) {
+                                    InfoBadge(text = "Active State", isHighlight = true)
+                                } else {
+                                    Text(
+                                        text = "Jump",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
@@ -374,16 +582,165 @@ fun AdjustPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: a
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-        ValueSlider("Exposure", adj.exposure, { viewModel.updateColorAdjustment { c -> c.copy(exposure = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Brightness", adj.brightness, { viewModel.updateColorAdjustment { c -> c.copy(brightness = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Contrast", adj.contrast, { viewModel.updateColorAdjustment { c -> c.copy(contrast = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Highlights", adj.highlights, { viewModel.updateColorAdjustment { c -> c.copy(highlights = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Shadows", adj.shadows, { viewModel.updateColorAdjustment { c -> c.copy(shadows = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Whites", adj.whites, { viewModel.updateColorAdjustment { c -> c.copy(whites = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Blacks", adj.blacks, { viewModel.updateColorAdjustment { c -> c.copy(blacks = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Saturation", adj.saturation, { viewModel.updateColorAdjustment { c -> c.copy(saturation = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Vibrance", adj.vibrance, { viewModel.updateColorAdjustment { c -> c.copy(vibrance = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Fade", adj.fade, { viewModel.updateColorAdjustment { c -> c.copy(fade = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
+        ValueSlider(
+            "Exposure",
+            adj.exposure,
+            { viewModel.updateColorAdjustment(paramName = "exposure", description = "Exposure: ${it.toInt()}%") { c -> c.copy(exposure = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Brightness",
+            adj.brightness,
+            { viewModel.updateColorAdjustment(paramName = "brightness", description = "Brightness: ${it.toInt()}%") { c -> c.copy(brightness = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Contrast",
+            adj.contrast,
+            { viewModel.updateColorAdjustment(paramName = "contrast", description = "Contrast: ${it.toInt()}%") { c -> c.copy(contrast = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Highlights",
+            adj.highlights,
+            { viewModel.updateColorAdjustment(paramName = "highlights", description = "Highlights: ${it.toInt()}%") { c -> c.copy(highlights = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Shadows",
+            adj.shadows,
+            { viewModel.updateColorAdjustment(paramName = "shadows", description = "Shadows: ${it.toInt()}%") { c -> c.copy(shadows = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Whites",
+            adj.whites,
+            { viewModel.updateColorAdjustment(paramName = "whites", description = "Whites: ${it.toInt()}%") { c -> c.copy(whites = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Blacks",
+            adj.blacks,
+            { viewModel.updateColorAdjustment(paramName = "blacks", description = "Blacks: ${it.toInt()}%") { c -> c.copy(blacks = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Saturation",
+            adj.saturation,
+            { viewModel.updateColorAdjustment(paramName = "saturation", description = "Saturation: ${it.toInt()}%") { c -> c.copy(saturation = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Vibrance",
+            adj.vibrance,
+            { viewModel.updateColorAdjustment(paramName = "vibrance", description = "Vibrance: ${it.toInt()}%") { c -> c.copy(vibrance = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Fade",
+            adj.fade,
+            { viewModel.updateColorAdjustment(paramName = "fade", description = "Fade: ${it.toInt()}%") { c -> c.copy(fade = it) } },
+            valueRange = 0f..100f,
+            verticalPadding = sliderPadding
+        )
+    }
+}
+
+@Composable
+fun LutsPanel(adj: ColorAdjustment, viewModel: MainViewModel) {
+    val luts = listOf(
+        0 to ("None (Natural)" to "Original Master Camera Look"),
+        1 to ("Teal & Orange" to "Hollywood Blockbuster Film Look"),
+        2 to ("Moody Film" to "Emerald & Slate Dark Cinema"),
+        3 to ("Cyberpunk Neon" to "Vivid Electric Magenta & Cyan"),
+        4 to ("Clean Arri" to "Organic Commercial Skin Tones"),
+        5 to ("Vintage 70s" to "Warm Super-8 Kodak Emulsion"),
+        6 to ("Bleach Bypass" to "Silver Gelatin High Contrast"),
+        7 to ("Noir B&W" to "35mm High-Dynamic Monochrome"),
+        8 to ("Sunset Gold" to "Warm Golden Hour Amber Glow")
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        ValueSlider(
+            label = "LUT Blend Intensity",
+            value = adj.lutIntensity,
+            onValueChange = {
+                viewModel.updateColorAdjustment(paramName = "lut_intensity", description = "LUT Intensity: ${it.toInt()}%") { c ->
+                    c.copy(lutIntensity = it)
+                }
+            },
+            valueRange = 0f..100f,
+            defaultValue = 100f,
+            unit = "%"
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = "Cinematic 3D Look-Up Tables (Real-Time GPU)",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            luts.forEach { (idx, lutInfo) ->
+                val (name, subtitle) = lutInfo
+                val isSelected = adj.lutIndex == idx
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    border = androidx.compose.foundation.BorderStroke(
+                        if (isSelected) 1.5.dp else 1.dp,
+                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    ),
+                    modifier = Modifier
+                        .width(150.dp)
+                        .clickable {
+                            viewModel.updateColorAdjustment(paramName = "lut", description = "Applied LUT: $name") { c ->
+                                c.copy(lutIndex = idx)
+                            }
+                        }
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            maxLines = 2,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
     }
 }
 
@@ -395,12 +752,22 @@ fun ColorPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: an
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-        ValueSlider("Temperature", adj.temperature, { viewModel.updateColorAdjustment { c -> c.copy(temperature = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Tint", adj.tint, { viewModel.updateColorAdjustment { c -> c.copy(tint = it) } }, verticalPadding = sliderPadding)
+        ValueSlider(
+            "Temperature",
+            adj.temperature,
+            { viewModel.updateColorAdjustment(paramName = "temperature", description = "Temperature: ${it.toInt()}") { c -> c.copy(temperature = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Tint",
+            adj.tint,
+            { viewModel.updateColorAdjustment(paramName = "tint", description = "Tint: ${it.toInt()}") { c -> c.copy(tint = it) } },
+            verticalPadding = sliderPadding
+        )
 
         Spacer(modifier = Modifier.height(8.dp))
         Button(
-            onClick = { viewModel.resetColorAdjustment() },
+            onClick = { viewModel.revertParameter("temperature"); viewModel.revertParameter("tint") },
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().height(42.dp)
@@ -418,9 +785,25 @@ fun HslPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: andr
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-        ValueSlider("Hue Shift", adj.hueShift, { viewModel.updateColorAdjustment { c -> c.copy(hueShift = it) } }, valueRange = -180f..180f, verticalPadding = sliderPadding)
-        ValueSlider("HSL Saturation", adj.hslSaturation, { viewModel.updateColorAdjustment { c -> c.copy(hslSaturation = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("HSL Luminance", adj.hslLuminance, { viewModel.updateColorAdjustment { c -> c.copy(hslLuminance = it) } }, verticalPadding = sliderPadding)
+        ValueSlider(
+            "Hue Shift",
+            adj.hueShift,
+            { viewModel.updateColorAdjustment(paramName = "hueshift", description = "Hue Shift: ${it.toInt()}°") { c -> c.copy(hueShift = it) } },
+            valueRange = -180f..180f,
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "HSL Saturation",
+            adj.hslSaturation,
+            { viewModel.updateColorAdjustment(paramName = "hslsaturation", description = "HSL Saturation: ${it.toInt()}%") { c -> c.copy(hslSaturation = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "HSL Luminance",
+            adj.hslLuminance,
+            { viewModel.updateColorAdjustment(paramName = "hslluminance", description = "HSL Luminance: ${it.toInt()}%") { c -> c.copy(hslLuminance = it) } },
+            verticalPadding = sliderPadding
+        )
     }
 }
 
@@ -432,50 +815,24 @@ fun RgbPanel(adj: ColorAdjustment, viewModel: MainViewModel, sliderPadding: andr
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-        ValueSlider("Red Gain", adj.rgbRed, { viewModel.updateColorAdjustment { c -> c.copy(rgbRed = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Green Gain", adj.rgbGreen, { viewModel.updateColorAdjustment { c -> c.copy(rgbGreen = it) } }, verticalPadding = sliderPadding)
-        ValueSlider("Blue Gain", adj.rgbBlue, { viewModel.updateColorAdjustment { c -> c.copy(rgbBlue = it) } }, verticalPadding = sliderPadding)
-    }
-}
-
-@Composable
-fun LutsPanel(adj: ColorAdjustment, viewModel: MainViewModel) {
-    val luts = listOf(
-        0 to "None (Natural)",
-        1 to "Teal & Orange",
-        2 to "Moody Film",
-        3 to "Cyberpunk Neon",
-        4 to "Clean Arri",
-        5 to "Vintage 70s",
-        6 to "Bleach Bypass",
-        7 to "Noir B&W"
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-    ) {
         ValueSlider(
-            label = "LUT Intensity",
-            value = adj.lutIntensity,
-            onValueChange = { viewModel.updateColorAdjustment { c -> c.copy(lutIntensity = it) } },
-            valueRange = 0f..100f
+            "Red Gain",
+            adj.rgbRed,
+            { viewModel.updateColorAdjustment(paramName = "rgbred", description = "Red Gain: ${it.toInt()}%") { c -> c.copy(rgbRed = it) } },
+            verticalPadding = sliderPadding
         )
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            luts.forEach { (idx, name) ->
-                val isSelected = adj.lutIndex == idx
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { viewModel.updateColorAdjustment { c -> c.copy(lutIndex = idx) } },
-                    label = { Text(name, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
-                )
-            }
-        }
+        ValueSlider(
+            "Green Gain",
+            adj.rgbGreen,
+            { viewModel.updateColorAdjustment(paramName = "rgbgreen", description = "Green Gain: ${it.toInt()}%") { c -> c.copy(rgbGreen = it) } },
+            verticalPadding = sliderPadding
+        )
+        ValueSlider(
+            "Blue Gain",
+            adj.rgbBlue,
+            { viewModel.updateColorAdjustment(paramName = "rgbblue", description = "Blue Gain: ${it.toInt()}%") { c -> c.copy(rgbBlue = it) } },
+            verticalPadding = sliderPadding
+        )
     }
 }
 
@@ -511,28 +868,28 @@ fun CurvesPanel(adj: ColorAdjustment, viewModel: MainViewModel, graphHeight: and
         when (selectedChannel) {
             "Master" -> CurvesGraphView(
                 curveValue = adj.curveMaster,
-                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveMaster = it) } },
+                onCurveValueChange = { viewModel.updateColorAdjustment(paramName = "curves", description = "Master Curve: ${it.toInt()}%") { c -> c.copy(curveMaster = it) } },
                 channelColor = Color.White,
                 channelName = "RGB Master Curve",
                 graphHeight = graphHeight
             )
             "Red" -> CurvesGraphView(
                 curveValue = adj.curveRed,
-                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveRed = it) } },
+                onCurveValueChange = { viewModel.updateColorAdjustment(paramName = "curves", description = "Red Curve: ${it.toInt()}%") { c -> c.copy(curveRed = it) } },
                 channelColor = Color(0xFFEF5350),
                 channelName = "Red Channel Curve",
                 graphHeight = graphHeight
             )
             "Green" -> CurvesGraphView(
                 curveValue = adj.curveGreen,
-                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveGreen = it) } },
+                onCurveValueChange = { viewModel.updateColorAdjustment(paramName = "curves", description = "Green Curve: ${it.toInt()}%") { c -> c.copy(curveGreen = it) } },
                 channelColor = Color(0xFF66BB6A),
                 channelName = "Green Channel Curve",
                 graphHeight = graphHeight
             )
             "Blue" -> CurvesGraphView(
                 curveValue = adj.curveBlue,
-                onCurveValueChange = { viewModel.updateColorAdjustment { c -> c.copy(curveBlue = it) } },
+                onCurveValueChange = { viewModel.updateColorAdjustment(paramName = "curves", description = "Blue Curve: ${it.toInt()}%") { c -> c.copy(curveBlue = it) } },
                 channelColor = Color(0xFF42A5F5),
                 channelName = "Blue Channel Curve",
                 graphHeight = graphHeight
@@ -555,7 +912,7 @@ fun WheelsPanel(adj: ColorAdjustment, viewModel: MainViewModel, wheelSize: andro
             hue = adj.shadowTintHue,
             amount = adj.shadowTintAmount,
             onHueAmountChange = { h, a ->
-                viewModel.updateColorAdjustment { it.copy(shadowTintHue = h, shadowTintAmount = a) }
+                viewModel.updateColorAdjustment(paramName = "colorwheels", description = "Shadow Wheel: ${a.toInt()}%") { it.copy(shadowTintHue = h, shadowTintAmount = a) }
             },
             wheelSize = wheelSize
         )
@@ -564,7 +921,7 @@ fun WheelsPanel(adj: ColorAdjustment, viewModel: MainViewModel, wheelSize: andro
             hue = adj.midtoneTintHue,
             amount = adj.midtoneTintAmount,
             onHueAmountChange = { h, a ->
-                viewModel.updateColorAdjustment { it.copy(midtoneTintHue = h, midtoneTintAmount = a) }
+                viewModel.updateColorAdjustment(paramName = "colorwheels", description = "Midtone Wheel: ${a.toInt()}%") { it.copy(midtoneTintHue = h, midtoneTintAmount = a) }
             },
             wheelSize = wheelSize
         )
@@ -573,7 +930,7 @@ fun WheelsPanel(adj: ColorAdjustment, viewModel: MainViewModel, wheelSize: andro
             hue = adj.highlightTintHue,
             amount = adj.highlightTintAmount,
             onHueAmountChange = { h, a ->
-                viewModel.updateColorAdjustment { it.copy(highlightTintHue = h, highlightTintAmount = a) }
+                viewModel.updateColorAdjustment(paramName = "colorwheels", description = "Highlight Wheel: ${a.toInt()}%") { it.copy(highlightTintHue = h, highlightTintAmount = a) }
             },
             wheelSize = wheelSize
         )
@@ -588,8 +945,8 @@ fun DetailPanel(adj: ColorAdjustment, config: EnhancementConfig, viewModel: Main
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-        ValueSlider("Sharpness", adj.sharpness, { viewModel.updateColorAdjustment { c -> c.copy(sharpness = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
-        ValueSlider("Clarity", adj.clarity, { viewModel.updateColorAdjustment { c -> c.copy(clarity = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
+        ValueSlider("Sharpness", adj.sharpness, { viewModel.updateColorAdjustment(paramName = "sharpness", description = "Sharpness: ${it.toInt()}%") { c -> c.copy(sharpness = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
+        ValueSlider("Clarity", adj.clarity, { viewModel.updateColorAdjustment(paramName = "clarity", description = "Clarity: ${it.toInt()}%") { c -> c.copy(clarity = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
         ValueSlider("Denoise", config.aiDenoise, { viewModel.updateEnhancementConfig { c -> c.copy(aiDenoise = it) } }, valueRange = 0f..100f, verticalPadding = sliderPadding)
     }
 }
@@ -758,7 +1115,6 @@ fun EnhanceConfigModal(
                 Text(
                     text = "Configure offline hardware & AI processing",
                     style = MaterialTheme.typography.bodySmall,
-                    fontSize = if (compact.isCompact) 11.sp else 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -767,29 +1123,10 @@ fun EnhanceConfigModal(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = if (compact.isCompact) 310.dp else 420.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                // Quality Safety Advisory
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .padding(if (compact.isCompact) 8.dp else 12.dp)
-                ) {
-                    Text(
-                        text = "Safety Note: Enhancement improves perceived detail, clarity, and removes noise, but cannot recover data that was never captured.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.5.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(if (compact.isCompact) 8.dp else 14.dp))
-
                 // Target Resolution
-                Text("Target Resolution", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                Text("Output Resolution", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -807,17 +1144,17 @@ fun EnhanceConfigModal(
                 Spacer(modifier = Modifier.height(if (compact.isCompact) 8.dp else 14.dp))
 
                 // Target FPS
-                Text("Target FPS", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                Text("Target Frame Rate", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ExportFps.values().forEach { fps ->
+                    ExportFps.values().forEach { f ->
                         FilterChip(
-                            selected = config.targetFps == fps,
-                            onClick = { onUpdateConfig { it.copy(targetFps = fps) } },
-                            label = { Text(fps.label, fontSize = if (compact.isCompact) 11.sp else 12.sp) }
+                            selected = config.targetFps == f,
+                            onClick = { onUpdateConfig { it.copy(targetFps = f) } },
+                            label = { Text(f.label, fontSize = if (compact.isCompact) 11.sp else 12.sp) }
                         )
                     }
                 }
@@ -825,7 +1162,7 @@ fun EnhanceConfigModal(
                 Spacer(modifier = Modifier.height(if (compact.isCompact) 8.dp else 14.dp))
 
                 // Target Codec
-                Text("Encoding Codec", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                Text("Video Codec", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),

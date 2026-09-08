@@ -26,6 +26,7 @@ object ColorFilterEngine {
     const val FRAGMENT_SHADER = """
         #extension GL_OES_EGL_image_external : require
         precision mediump float;
+        precision mediump int;
         varying vec2 vTextureCoord;
         uniform samplerExternalOES sTexture;
 
@@ -222,37 +223,57 @@ object ColorFilterEngine {
             if (uLutType > 0 && uLutIntensity > 0.01) {
                 vec3 lutC = c;
                 float lum = dot(lutC, vec3(0.2126, 0.7152, 0.0722));
-                if (uLutType == 1) { // Teal & Orange
-                    vec3 teal = vec3(0.0, 0.45, 0.55);
-                    vec3 orange = vec3(1.0, 0.55, 0.15);
-                    lutC = mix(teal * lum * 1.5, orange, lum);
-                    lutC = mix(c, lutC, 0.5);
-                } else if (uLutType == 2) { // Moody Film
+                if (uLutType == 1) { 
+                    // Teal & Orange Blockbuster Look
+                    vec3 tealShadow = vec3(lutC.r * 0.75 + 0.01, lutC.g * 1.08 + 0.04, lutC.b * 1.32 + 0.08);
+                    vec3 amberHighlight = vec3(lutC.r * 1.28 + 0.06, lutC.g * 1.04 + 0.02, lutC.b * 0.72);
+                    lutC = mix(tealShadow, amberHighlight, smoothstep(0.18, 0.72, lum));
+                    lutC = (lutC - vec3(0.5)) * 1.12 + vec3(0.5);
+                } else if (uLutType == 2) { 
+                    // Moody Film (Emerald & Slate)
+                    lutC = (lutC - vec3(0.5)) * 1.25 + vec3(0.5);
+                    lutC.r = lutC.r * 0.94;
+                    lutC.g = lutC.g * 1.05 + 0.02;
+                    lutC.b = lutC.b * 1.15 + 0.04;
+                    lutC = mix(vec3(lum), lutC, 0.88);
+                } else if (uLutType == 3) { 
+                    // Cyberpunk Neon (Vivid Violet & Cyan)
+                    lutC.r = pow(max(lutC.r, 0.0), 0.82) * 1.25;
+                    lutC.g = lutC.g * 0.78;
+                    lutC.b = pow(max(lutC.b, 0.0), 0.78) * 1.38;
+                    lutC = (lutC - vec3(0.5)) * 1.18 + vec3(0.5);
+                } else if (uLutType == 4) { 
+                    // Clean Arri (Commercial Natural Skin Tone)
+                    lutC = pow(max(lutC, vec3(0.0)), vec3(0.94)) * 1.04;
+                    lutC.r *= 1.04;
+                    lutC.b *= 0.96;
+                    lutC = (lutC - vec3(0.5)) * 1.08 + vec3(0.5);
+                } else if (uLutType == 5) { 
+                    // Vintage 70s Warmth (Super 8 Kodak)
+                    lutC.r = lutC.r * 1.22 + 0.04;
+                    lutC.g = lutC.g * 1.08 + 0.02;
+                    lutC.b = lutC.b * 0.82;
+                    lutC = max(lutC, vec3(0.07));
+                    lutC = mix(vec3(lum), lutC, 0.92);
+                } else if (uLutType == 6) { 
+                    // Bleach Bypass (Silver Gelatin Contrast)
+                    vec3 silver = 2.0 * lutC * vec3(lum);
+                    lutC = mix(lutC, silver, 0.60);
+                    lutC = mix(vec3(lum), lutC, 0.55);
                     lutC = (lutC - vec3(0.5)) * 1.22 + vec3(0.5);
-                    lutC.g *= 0.94;
-                    lutC.b = lutC.b * 1.08 + 0.03;
-                } else if (uLutType == 3) { // Cyberpunk Neon
-                    lutC.r = pow(max(lutC.r, 0.0), 0.85) * 1.15;
-                    lutC.b = pow(max(lutC.b, 0.0), 0.8) * 1.3;
-                    lutC.g *= 0.82;
-                } else if (uLutType == 4) { // Clean Arri Commercial
-                    lutC = (lutC - vec3(0.5)) * 1.1 + vec3(0.5);
-                    lutC.r *= 1.02;
-                    lutC.b *= 0.98;
-                } else if (uLutType == 5) { // Vintage Warm 70s
-                    lutC.r *= 1.12;
-                    lutC.g *= 1.05;
-                    lutC.b *= 0.82;
-                    lutC = max(lutC, vec3(0.06));
-                } else if (uLutType == 6) { // Bleach Bypass
-                    vec3 blend = 2.0 * lutC * vec3(lum);
-                    lutC = mix(lutC, blend, 0.6);
-                    lutC = mix(vec3(lum), lutC, 0.35);
-                } else if (uLutType == 7) { // Noir B&W
-                    float cLum = (lum - 0.5) * 1.45 + 0.5;
-                    lutC = vec3(clamp(cLum, 0.0, 1.0));
+                } else if (uLutType == 7) { 
+                    // Noir B&W (Classic 35mm High Dynamic Monochrome)
+                    float bwLum = dot(lutC, vec3(0.299, 0.587, 0.114));
+                    bwLum = (bwLum - 0.5) * 1.38 + 0.5;
+                    lutC = vec3(clamp(bwLum, 0.0, 1.0));
+                } else if (uLutType == 8) {
+                    // Sunset Gold (Golden Hour Amber)
+                    lutC.r = lutC.r * 1.30 + 0.05;
+                    lutC.g = lutC.g * 1.06 + 0.01;
+                    lutC.b = lutC.b * 0.70;
+                    lutC = (lutC - vec3(0.5)) * 1.15 + vec3(0.5);
                 }
-                c = mix(c, lutC, uLutIntensity);
+                c = mix(c, lutC, clamp(uLutIntensity, 0.0, 1.0));
             }
 
             gl_FragColor = vec4(clamp(c, 0.0, 1.0), baseColor.a);
@@ -285,18 +306,19 @@ object ColorFilterEngine {
         if (linkStatus[0] != GLES20.GL_TRUE) {
             val log = GLES20.glGetProgramInfoLog(program)
             GLES20.glDeleteProgram(program)
-            throw RuntimeException("Could not link GL program: $log")
+            throw RuntimeException("Could not link program: $log")
         }
         return program
     }
 
-    fun hueAmountToRgb(hue: Float, amount: Float): FloatArray {
-        if (amount <= 0f) return floatArrayOf(0f, 0f, 0f)
-        val rad = Math.toRadians(hue.toDouble())
-        val strength = (amount / 100f) * 0.28f
-        val r = (strength * cos(rad)).toFloat()
-        val g = (strength * cos(rad - 2.0 * Math.PI / 3.0)).toFloat()
-        val b = (strength * cos(rad - 4.0 * Math.PI / 3.0)).toFloat()
+    fun hueAmountToRgb(hueDeg: Float, amount: Float): FloatArray {
+        val sat = (amount / 100f).coerceIn(0f, 1f) * 0.25f
+        if (sat <= 0.001f) return floatArrayOf(0f, 0f, 0f)
+        val h = ((hueDeg % 360f) + 360f) % 360f
+        val rad = Math.toRadians(h.toDouble())
+        val r = (cos(rad).toFloat() * sat)
+        val g = (cos(rad - 2.0943951).toFloat() * sat)
+        val b = (cos(rad + 2.0943951).toFloat() * sat)
         return floatArrayOf(r, g, b)
     }
 
@@ -314,7 +336,7 @@ object ColorFilterEngine {
         val uTempRLoc = GLES20.glGetUniformLocation(program, "uTempR")
         val uTempBLoc = GLES20.glGetUniformLocation(program, "uTempB")
         val uTintGLoc = GLES20.glGetUniformLocation(program, "uTintG")
-        val uTintMLoc = GLES20.glGetUniformLocation(program, "uTintM")
+        val uTintMLLoc = GLES20.glGetUniformLocation(program, "uTintM")
         val uShadowsLoc = GLES20.glGetUniformLocation(program, "uShadows")
         val uHighlightsLoc = GLES20.glGetUniformLocation(program, "uHighlights")
         val uWhitesLoc = GLES20.glGetUniformLocation(program, "uWhites")
@@ -392,7 +414,7 @@ object ColorFilterEngine {
         val tintG = if (adj.tint < 0) 1f + (-adj.tint / 180f) else 1f
         val tintM = if (adj.tint > 0) 1f + (adj.tint / 180f) else 1f
         GLES20.glUniform1f(uniforms.uTintGLoc, tintG)
-        GLES20.glUniform1f(uniforms.uTintMLoc, tintM)
+        GLES20.glUniform1f(uniforms.uTintMLLoc, tintM)
 
         // Shadows, Highlights, Whites, Blacks
         val shadows = (adj.shadows / 100f) * 0.30f
@@ -448,53 +470,51 @@ object ColorFilterEngine {
         GLES20.glUniform3f(uniforms.uMidtoneWheelLoc, midtoneRgb[0], midtoneRgb[1], midtoneRgb[2])
         GLES20.glUniform3f(uniforms.uHighlightWheelLoc, highlightRgb[0], highlightRgb[1], highlightRgb[2])
 
-        // AI Sharpen & Denoise
-        val baseSharpen = (config?.aiSharpen ?: 35f) + adj.sharpness
+        // AI Enhancements (GPU pass)
+        val baseSharpen = (config?.aiSharpen ?: 0f) + adj.sharpness
         val aiSharpen = (baseSharpen / 100f).coerceIn(0f, 1f)
         GLES20.glUniform1f(uniforms.uAiSharpenLoc, aiSharpen)
 
-        val baseDenoise = (config?.aiDenoise ?: 45f) + (config?.artifactRemoval?.times(0.5f) ?: 0f)
+        val baseDenoise = config?.aiDenoise ?: 0f
         val aiDenoise = (baseDenoise / 100f).coerceIn(0f, 1f)
         GLES20.glUniform1f(uniforms.uAiDenoiseLoc, aiDenoise)
     }
 
-    fun createColorMatrix(adj: ColorAdjustment): ColorMatrix {
+    fun buildColorMatrix(adj: ColorAdjustment): ColorMatrix {
+        val cm = ColorMatrix()
+
         val exposureFactor = if (adj.exposure >= 0) 1f + (adj.exposure / 100f) else 1f / (1f - (adj.exposure / 100f))
         val brightnessOffset = (adj.brightness / 100f) * 60f
         val contrast = if (adj.contrast >= 0) 1f + (adj.contrast / 100f) * 1.2f else 1f + (adj.contrast / 100f) * 0.7f
-        val contrastOffset = (1f - contrast) * 128f
-        val sat = ((adj.saturation + 100f) / 100f).coerceIn(0f, 2.5f)
 
-        val tempR = if (adj.temperature > 0) 1f + (adj.temperature / 200f) else 1f
-        val tempB = if (adj.temperature < 0) 1f + (-adj.temperature / 200f) else 1f
-        val tintG = if (adj.tint < 0) 1f + (-adj.tint / 250f) else 1f
-        val tintM = if (adj.tint > 0) 1f + (adj.tint / 250f) else 1f
+        val sat = ((adj.saturation + 100f) / 100f).coerceIn(0f, 2.5f)
+        cm.setSaturation(sat)
+
+        val tempR = if (adj.temperature > 0) 1f + (adj.temperature / 150f) else 1f
+        val tempB = if (adj.temperature < 0) 1f + (-adj.temperature / 150f) else 1f
+        val tintG = if (adj.tint < 0) 1f + (-adj.tint / 180f) else 1f
+        val tintM = if (adj.tint > 0) 1f + (adj.tint / 180f) else 1f
+
         val fadeLift = (adj.fade / 100f) * 45f
         val shadowLift = (adj.shadows / 100f) * 30f
         val highlightCompress = -(adj.highlights / 100f) * 25f
 
-        val lr = 0.2126f
-        val lg = 0.7152f
-        val lb = 0.0722f
-        val invSat = 1f - sat
-        val rSat = invSat * lr
-        val gSat = invSat * lg
-        val bSat = invSat * lb
+        val totalOffset = brightnessOffset + fadeLift + shadowLift + highlightCompress
 
         val scaleR = exposureFactor * contrast * tempR * tintM * (1f + adj.rgbRed / 100f)
         val scaleG = exposureFactor * contrast * tintG * (1f + adj.rgbGreen / 100f)
         val scaleB = exposureFactor * contrast * tempB * (1f + adj.rgbBlue / 100f)
 
-        val netOffsetR = brightnessOffset + contrastOffset + fadeLift + shadowLift + highlightCompress
-        val netOffsetG = brightnessOffset + contrastOffset + fadeLift + shadowLift * 0.8f + highlightCompress * 0.8f
-        val netOffsetB = brightnessOffset + contrastOffset + fadeLift + shadowLift * 0.6f + highlightCompress * 0.6f
-
-        val matrix = floatArrayOf(
-            (rSat + sat) * scaleR, gSat * scaleR, bSat * scaleR, 0f, netOffsetR,
-            rSat * scaleG, (gSat + sat) * scaleG, bSat * scaleG, 0f, netOffsetG,
-            rSat * scaleB, gSat * scaleB, (bSat + sat) * scaleB, 0f, netOffsetB,
-            0f, 0f, 0f, 1f, 0f
+        val adjustMatrix = ColorMatrix(
+            floatArrayOf(
+                scaleR, 0f,     0f,     0f, totalOffset,
+                0f,     scaleG, 0f,     0f, totalOffset,
+                0f,     0f,     scaleB, 0f, totalOffset,
+                0f,     0f,     0f,     1f, 0f
+            )
         )
-        return ColorMatrix(matrix)
+
+        cm.postConcat(adjustMatrix)
+        return cm
     }
 }

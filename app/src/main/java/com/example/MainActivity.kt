@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -36,87 +38,111 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
 
-                NavHost(
-                    navController = navController,
-                    startDestination = Screen.Home.route,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    composable(Screen.Home.route) {
-                        HomeScreen(
-                            viewModel = viewModel,
-                            onNavigateToEditor = { navController.navigate(Screen.Editor.route) },
-                            onNavigateToProjects = { navController.navigate(Screen.Projects.route) },
-                            onNavigateToPresets = { navController.navigate(Screen.Presets.route) },
-                            onNavigateToStorage = { navController.navigate(Screen.Storage.route) },
-                            onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
-                        )
-                    }
+                    NavHost(
+                        navController = navController,
+                        startDestination = Screen.Home.route,
+                        modifier = Modifier.fillMaxSize(),
+                        enterTransition = {
+                            fadeIn(animationSpec = tween(300)) + slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Start,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        exitTransition = {
+                            fadeOut(animationSpec = tween(300)) + slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Start,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popEnterTransition = {
+                            fadeIn(animationSpec = tween(300)) + slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.End,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popExitTransition = {
+                            fadeOut(animationSpec = tween(300)) + slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.End,
+                                animationSpec = tween(300)
+                            )
+                        }
+                    ) {
+                        composable(Screen.Home.route) {
+                            HomeScreen(
+                                viewModel = viewModel,
+                                onNavigateToEditor = { navController.navigate(Screen.Editor.route) },
+                                onNavigateToProjects = { navController.navigate(Screen.Projects.route) },
+                                onNavigateToPresets = { navController.navigate(Screen.Presets.route) },
+                                onNavigateToStorage = { navController.navigate(Screen.Storage.route) },
+                                onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                            )
+                        }
 
-                    composable(Screen.Editor.route) {
-                        EditorScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() },
-                            onNavigateToProcessing = { navController.navigate(Screen.Processing.route) },
-                            onNavigateToExport = {
-                                navController.navigate(Screen.Export.route) {
-                                    popUpTo(Screen.Editor.route) { inclusive = false }
+                        composable(Screen.Editor.route) {
+                            EditorScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onNavigateToProcessing = { navController.navigate(Screen.Processing.route) },
+                                onNavigateToExport = {
+                                    navController.navigate(Screen.Export.route) {
+                                        popUpTo(Screen.Editor.route) { inclusive = false }
+                                    }
                                 }
-                            }
-                        )
-                    }
+                            )
+                        }
 
-                    composable(Screen.Processing.route) {
-                        ProcessingScreen(
-                            viewModel = viewModel,
-                            onCancel = { navController.popBackStack() }
-                        )
-                    }
+                        composable(Screen.Processing.route) {
+                            ProcessingScreen(
+                                viewModel = viewModel,
+                                onCancel = { navController.popBackStack() }
+                            )
+                        }
 
-                    composable(Screen.Export.route) {
-                        ExportScreen(
-                            viewModel = viewModel,
-                            onNavigateHome = {
-                                navController.navigate(Screen.Home.route) {
-                                    popUpTo(Screen.Home.route) { inclusive = true }
-                                }
-                            },
-                            onContinueEditing = { navController.popBackStack() }
-                        )
-                    }
+                        composable(Screen.Export.route) {
+                            ExportScreen(
+                                viewModel = viewModel,
+                                onNavigateHome = {
+                                    navController.navigate(Screen.Home.route) {
+                                        popUpTo(Screen.Home.route) { inclusive = true }
+                                    }
+                                },
+                                onContinueEditing = { navController.popBackStack() }
+                            )
+                        }
 
-                    composable(Screen.Projects.route) {
-                        ProjectsScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() },
-                            onOpenProject = { navController.navigate(Screen.Editor.route) }
-                        )
-                    }
+                        composable(Screen.Projects.route) {
+                            ProjectsScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onOpenProject = { navController.navigate(Screen.Editor.route) }
+                            )
+                        }
 
-                    composable(Screen.Presets.route) {
-                        PresetsScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() },
-                            onApplyPresetAndEdit = { navController.navigate(Screen.Editor.route) }
-                        )
-                    }
+                        composable(Screen.Presets.route) {
+                            PresetsScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onApplyPresetAndEdit = { navController.navigate(Screen.Editor.route) }
+                            )
+                        }
 
-                    composable(Screen.Storage.route) {
-                        StorageScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() }
-                        )
-                    }
+                        composable(Screen.Storage.route) {
+                            StorageScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
 
-                    composable(Screen.Settings.route) {
-                        SettingsScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() },
-                            onNavigateToStorage = { navController.navigate(Screen.Storage.route) }
-                        )
+                        composable(Screen.Settings.route) {
+                            SettingsScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onNavigateToStorage = { navController.navigate(Screen.Storage.route) }
+                            )
+                        }
                     }
                 }
             }
         }
     }
-}
 }
