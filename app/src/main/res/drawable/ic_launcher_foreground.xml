@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer Circular Subtle Aura -->
+    <path
+        android:pathData="M 54,22 A 32,32 0 1,1 54,86 A 32,32 0 1,1 54,22 Z"
+        android:strokeWidth="1.0"
+        android:strokeColor="#40E5A93C" />
+
+    <!-- Main Outer Circular Ring (Gold Metallic) -->
+    <path
+        android:pathData="M 54,25 A 29,29 0 1,1 54,83 A 29,29 0 1,1 54,25 Z"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="25"
+                android:startY="25"
+                android:endX="83"
+                android:endY="83"
+                android:type="linear">
+                <item android:color="#FFF1C2" android:offset="0.0" />
+                <item android:color="#E5A93C" android:offset="0.5" />
+                <item android:color="#966012" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Concentric Lens Ring -->
+    <path
+        android:pathData="M 54,30 A 24,24 0 1,1 54,78 A 24,24 0 1,1 54,30 Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#70E5A93C" />
+
+    <!-- Deep Luxury Circular Disc Core -->
+    <path
+        android:pathData="M 54,31 A 23,23 0 1,1 54,77 A 23,23 0 1,1 54,31 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="31"
+                android:endX="54"
+                android:endY="77"
+                android:type="linear">
+                <item android:color="#1A1E29" android:offset="0.0" />
+                <item android:color="#0B0D13" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Subtle Optical Aperture Iris Curves -->
+    <path
+        android:pathData="M 39,43 C 44,40 50,40 56,42 M 67,46 C 68,52 66,58 62,63 M 53,69 C 47,70 41,68 37,63 M 34,56 C 34,50 36,44 40,40"
+        android:strokeWidth="1.0"
+        android:strokeColor="#35E5A93C" />
+
+    <!-- Inner Core Circle -->
+    <path
+        android:pathData="M 54,38 A 16,16 0 1,1 54,70 A 16,16 0 1,1 54,38 Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#90E5A93C" />
+
+    <!-- AI Neural Quality 4-Point Star (Gold Gloss) -->
+    <path
+        android:pathData="M 54,40 Q 54,54 68,54 Q 54,54 54,68 Q 54,54 40,54 Q 54,54 54,40 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="40"
+                android:startY="40"
+                android:endX="68"
+                android:endY="68"
+                android:type="linear">
+                <item android:color="#FFF3CE" android:offset="0.0" />
+                <item android:color="#F5B942" android:offset="0.5" />
+                <item android:color="#C47E10" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Secondary Diagonal Micro Sparkles -->
+    <path
+        android:pathData="M 54,47 Q 54,54 61,54 Q 54,54 54,61 Q 54,54 47,54 Q 54,54 54,47 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Center Core Gem Dot -->
+    <path
+        android:pathData="M 54,52 A 2,2 0 1,1 54,56 A 2,2 0 1,1 54,52 Z"
+        android:fillColor="#FFFDE7" />
+
+</vector>
