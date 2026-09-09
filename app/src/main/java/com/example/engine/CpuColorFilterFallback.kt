@@ -31,40 +31,40 @@ object CpuColorFilterFallback {
     }
 
     fun processPixels(pixels: IntArray, width: Int, height: Int, adj: ColorAdjustment, config: EnhancementConfig?) {
-        val exposureFactor = 2.0.pow((adj.exposure / 50.0).toDouble()).toFloat()
-        val brightness = adj.brightness / 100f
-        val contrast = (adj.contrast / 100f) + 1.0f
-        val saturation = (adj.saturation / 100f) + 1.0f
-        val tempR = 1.0f + (adj.temperature / 100f) * 0.35f
-        val tempB = 1.0f - (adj.temperature / 100f) * 0.35f
-        val tintG = 1.0f - (adj.tint / 100f) * 0.25f
-        val tintM = 1.0f + (adj.tint / 100f) * 0.25f
-        val shadowShift = (adj.shadows / 100f) * 0.3f
-        val highlightShift = (adj.highlights / 100f) * 0.3f
-        val whiteShift = (adj.whites / 100f) * 0.3f
-        val blackShift = (adj.blacks / 100f) * 0.3f
+        val exposureFactor = if (adj.exposure >= 0) 1f + (adj.exposure / 100f) * 1.2f else 1f + (adj.exposure / 100f) * 0.6f
+        val brightness = (adj.brightness / 100f) * 0.35f
+        val contrast = if (adj.contrast >= 0) 1f + (adj.contrast / 100f) * 1.2f else 1f + (adj.contrast / 100f) * 0.7f
+        val saturation = ((adj.saturation + 100f) / 100f).coerceIn(0f, 2.5f)
+        val tempR = if (adj.temperature > 0) 1f + (adj.temperature / 150f) else 1f
+        val tempB = if (adj.temperature < 0) 1f + (-adj.temperature / 150f) else 1f
+        val tintG = if (adj.tint < 0) 1f + (-adj.tint / 180f) else 1f
+        val tintM = if (adj.tint > 0) 1f + (adj.tint / 180f) else 1f
+        val shadowShift = (adj.shadows / 100f) * 0.30f
+        val highlightShift = (adj.highlights / 100f) * 0.25f
+        val whiteShift = (adj.whites / 100f) * 0.30f
+        val blackShift = (adj.blacks / 100f) * 0.30f
         val fade = (adj.fade / 100f) * 0.25f
-        val curveM = adj.curveMaster / 100f
-        val curveR = adj.curveRed / 100f
-        val curveG = adj.curveGreen / 100f
-        val curveB = adj.curveBlue / 100f
-        val rgbR = adj.rgbRed / 100f
-        val rgbG = adj.rgbGreen / 100f
-        val rgbB = adj.rgbBlue / 100f
+        val curveM = (adj.curveMaster / 100f).coerceIn(-1f, 1f)
+        val curveR = (adj.curveRed / 100f).coerceIn(-1f, 1f)
+        val curveG = (adj.curveGreen / 100f).coerceIn(-1f, 1f)
+        val curveB = (adj.curveBlue / 100f).coerceIn(-1f, 1f)
+        val rgbR = (adj.rgbRed / 100f).coerceIn(-1f, 1f)
+        val rgbG = (adj.rgbGreen / 100f).coerceIn(-1f, 1f)
+        val rgbB = (adj.rgbBlue / 100f).coerceIn(-1f, 1f)
         val lutType = adj.lutIndex
-        val lutWeight = adj.lutIntensity / 100f
+        val lutWeight = (adj.lutIntensity / 100f).coerceIn(0f, 1f)
 
-        val aiSharpen = ((config?.aiSharpen ?: 0f) + adj.sharpness).coerceIn(0f, 100f) / 100f
-        val aiDenoise = ((config?.aiDenoise ?: 0f)).coerceIn(0f, 100f) / 100f
+        val aiSharpen = (((config?.aiSharpen ?: 0f) + adj.sharpness) / 100f).coerceIn(0f, 1f)
+        val aiDenoise = ((config?.aiDenoise ?: 0f) / 100f).coerceIn(0f, 1f)
 
         val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(2)
-        val chunkSize = height / cores
+        val chunkSize = (height / cores).coerceAtLeast(1)
 
         runBlocking(Dispatchers.Default) {
             val jobs = (0 until cores).map { coreIdx ->
                 async {
                     val startY = coreIdx * chunkSize
-                    val endY = if (coreIdx == cores - 1) height else (coreIdx + 1) * chunkSize
+                    val endY = if (coreIdx == cores - 1) height else ((coreIdx + 1) * chunkSize).coerceAtMost(height)
 
                     for (y in startY until endY) {
                         val rowOffset = y * width
@@ -78,7 +78,7 @@ object CpuColorFilterFallback {
                             val a = Color.alpha(pixel)
 
                             // AI Denoise (cross-neighborhood average)
-                            if (aiDenoise > 0.05f && x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+                            if (aiDenoise > 0.03f && x > 0 && x < width - 1 && y > 0 && y < height - 1) {
                                 val nP = pixels[idx - width]
                                 val sP = pixels[idx + width]
                                 val eP = pixels[idx + 1]
@@ -86,13 +86,14 @@ object CpuColorFilterFallback {
                                 val avgR = (r + Color.red(nP)/255f + Color.red(sP)/255f + Color.red(eP)/255f + Color.red(wP)/255f) * 0.2f
                                 val avgG = (g + Color.green(nP)/255f + Color.green(sP)/255f + Color.green(eP)/255f + Color.green(wP)/255f) * 0.2f
                                 val avgB = (b + Color.blue(nP)/255f + Color.blue(sP)/255f + Color.blue(eP)/255f + Color.blue(wP)/255f) * 0.2f
-                                r = r * (1f - aiDenoise * 0.5f) + avgR * (aiDenoise * 0.5f)
-                                g = g * (1f - aiDenoise * 0.5f) + avgG * (aiDenoise * 0.5f)
-                                b = b * (1f - aiDenoise * 0.5f) + avgB * (aiDenoise * 0.5f)
+                                val smoothW = (1f - (abs(r - avgR) + abs(g - avgG) + abs(b - avgB)) * 1.5f).coerceIn(0f, 1f) * (aiDenoise * 0.65f)
+                                r = r * (1f - smoothW) + avgR * smoothW
+                                g = g * (1f - smoothW) + avgG * smoothW
+                                b = b * (1f - smoothW) + avgB * smoothW
                             }
 
                             // AI Sharpen (laplacian unsharp mask)
-                            if (aiSharpen > 0.05f && x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+                            if (aiSharpen > 0.03f && x > 0 && x < width - 1 && y > 0 && y < height - 1) {
                                 val nP = pixels[idx - width]
                                 val sP = pixels[idx + width]
                                 val eP = pixels[idx + 1]
@@ -100,9 +101,9 @@ object CpuColorFilterFallback {
                                 val lapR = 4f * r - (Color.red(nP) + Color.red(sP) + Color.red(eP) + Color.red(wP)) / 255f
                                 val lapG = 4f * g - (Color.green(nP) + Color.green(sP) + Color.green(eP) + Color.green(wP)) / 255f
                                 val lapB = 4f * b - (Color.blue(nP) + Color.blue(sP) + Color.blue(eP) + Color.blue(wP)) / 255f
-                                r += lapR * (aiSharpen * 0.6f)
-                                g += lapG * (aiSharpen * 0.6f)
-                                b += lapB * (aiSharpen * 0.6f)
+                                r += lapR * (aiSharpen * 0.85f)
+                                g += lapG * (aiSharpen * 0.85f)
+                                b += lapB * (aiSharpen * 0.85f)
                             }
 
                             // Exposure & Brightness
@@ -125,7 +126,7 @@ object CpuColorFilterFallback {
                             g = (g - 0.5f) * contrast + 0.5f
                             b = (b - 0.5f) * contrast + 0.5f
 
-                            val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            val luma = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
 
                             // Shadows, Highlights, Whites, Blacks
                             val shadowMask = (1f - luma * 2f).coerceIn(0f, 1f)
@@ -154,68 +155,136 @@ object CpuColorFilterFallback {
                                 b = max(b, fade)
                             }
 
-                            // Saturation
-                            val postLuma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                            // Global Saturation
+                            val postLuma = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
                             r = postLuma + (r - postLuma) * saturation
                             g = postLuma + (g - postLuma) * saturation
                             b = postLuma + (b - postLuma) * saturation
 
-                            // LUTs
+                            // 15 Studio LUTs
                             if (lutType > 0 && lutWeight > 0.01f) {
                                 var lutR = r
                                 var lutG = g
                                 var lutB = b
+                                val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
+
                                 when (lutType) {
-                                    1 -> { // Teal & Orange
-                                        val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).coerceIn(0f, 1f)
-                                        lutR = r * (1f - lum) * 0.1f + 1.0f * lum
-                                        lutG = g * (1f - lum) * 0.45f + 0.55f * lum
-                                        lutB = b * (1f - lum) * 0.75f + 0.15f * lum
+                                    1 -> { // Teal & Orange Blockbuster
+                                        val tealR = lutR * 0.75f + 0.01f
+                                        val tealG = lutG * 1.08f + 0.04f
+                                        val tealB = lutB * 1.32f + 0.08f
+                                        val ambR = lutR * 1.28f + 0.06f
+                                        val ambG = lutG * 1.04f + 0.02f
+                                        val ambB = lutB * 0.72f
+                                        val t = ((lum - 0.18f) / (0.72f - 0.18f)).coerceIn(0f, 1f)
+                                        lutR = (tealR * (1f - t) + ambR * t - 0.5f) * 1.15f + 0.5f
+                                        lutG = (tealG * (1f - t) + ambG * t - 0.5f) * 1.15f + 0.5f
+                                        lutB = (tealB * (1f - t) + ambB * t - 0.5f) * 1.15f + 0.5f
                                     }
-                                    2 -> { // Moody Film
-                                        val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                                        lutR = (r - 0.5f) * 1.2f + 0.5f
-                                        lutG = (g - 0.5f) * 1.15f + 0.5f
-                                        lutB = (b - 0.5f) * 1.3f + 0.53f
+                                    2 -> { // Moody Slate
+                                        lutR = (lutR - 0.5f) * 1.25f + 0.5f
+                                        lutG = (lutG - 0.5f) * 1.25f + 0.5f
+                                        lutB = (lutB - 0.5f) * 1.25f + 0.5f
+                                        lutR = lutR * 0.92f
+                                        lutG = lutG * 1.05f + 0.02f
+                                        lutB = lutB * 1.18f + 0.04f
+                                        lutR = lum * 0.12f + lutR * 0.88f
+                                        lutG = lum * 0.12f + lutG * 0.88f
+                                        lutB = lum * 0.12f + lutB * 0.88f
                                     }
-                                    3 -> { // Cyberpunk
-                                        lutR = (r.coerceAtLeast(0f)).pow(0.85f) * 1.15f
-                                        lutG *= 0.8f
-                                        lutB = (b.coerceAtLeast(0f)).pow(0.8f) * 1.3f
+                                    3 -> { // Cyberpunk Neon
+                                        lutR = max(lutR, 0f).pow(0.82f) * 1.25f
+                                        lutG = lutG * 0.78f
+                                        lutB = max(lutB, 0f).pow(0.78f) * 1.38f
+                                        lutR = (lutR - 0.5f) * 1.20f + 0.5f
+                                        lutG = (lutG - 0.5f) * 1.20f + 0.5f
+                                        lutB = (lutB - 0.5f) * 1.20f + 0.5f
                                     }
                                     4 -> { // Clean Arri
-                                        lutR = (r - 0.5f) * 1.1f + 0.5f
-                                        lutG = (g - 0.5f) * 1.08f + 0.5f
-                                        lutB = (b - 0.5f) * 1.06f + 0.5f
+                                        lutR = max(lutR, 0f).pow(0.94f) * 1.04f * 1.05f
+                                        lutG = max(lutG, 0f).pow(0.94f) * 1.04f
+                                        lutB = max(lutB, 0f).pow(0.94f) * 1.04f * 0.95f
+                                        lutR = (lutR - 0.5f) * 1.08f + 0.5f
+                                        lutG = (lutG - 0.5f) * 1.08f + 0.5f
+                                        lutB = (lutB - 0.5f) * 1.08f + 0.5f
                                     }
                                     5 -> { // Vintage 70s
-                                        lutR = max(r * 1.12f, 0.06f)
-                                        lutG = max(g * 1.04f, 0.05f)
-                                        lutB = max(b * 0.84f, 0.04f)
+                                        lutR = max(lutR * 1.22f + 0.04f, 0.07f)
+                                        lutG = max(lutG * 1.08f + 0.02f, 0.07f)
+                                        lutB = max(lutB * 0.80f, 0.07f)
+                                        lutR = lum * 0.08f + lutR * 0.92f
+                                        lutG = lum * 0.08f + lutG * 0.92f
+                                        lutB = lum * 0.08f + lutB * 0.92f
                                     }
                                     6 -> { // Bleach Bypass
-                                        val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                                        val blendR = 2f * r * lum
-                                        val blendG = 2f * g * lum
-                                        val blendB = 2f * b * lum
-                                        lutR = r * 0.4f + blendR * 0.6f
-                                        lutG = g * 0.4f + blendG * 0.6f
-                                        lutB = b * 0.4f + blendB * 0.6f
+                                        val silverR = 2f * lutR * lum
+                                        val silverG = 2f * lutG * lum
+                                        val silverB = 2f * lutB * lum
+                                        lutR = lutR * 0.40f + silverR * 0.60f
+                                        lutG = lutG * 0.40f + silverG * 0.60f
+                                        lutB = lutB * 0.40f + silverB * 0.60f
+                                        lutR = (lum * 0.45f + lutR * 0.55f - 0.5f) * 1.25f + 0.5f
+                                        lutG = (lum * 0.45f + lutG * 0.55f - 0.5f) * 1.25f + 0.5f
+                                        lutB = (lum * 0.45f + lutB * 0.55f - 0.5f) * 1.25f + 0.5f
                                     }
                                     7 -> { // Noir B&W
-                                        val lum = 0.299f * r + 0.587f * g + 0.114f * b
-                                        val cLum = ((lum - 0.5f) * 1.38f + 0.5f).coerceIn(0f, 1f)
+                                        val bwLum = (0.299f * lutR + 0.587f * lutG + 0.114f * lutB)
+                                        val cLum = ((bwLum - 0.5f) * 1.38f + 0.5f).coerceIn(0f, 1f)
                                         lutR = cLum
                                         lutG = cLum
                                         lutB = cLum
                                     }
                                     8 -> { // Sunset Gold
-                                        lutR = (r * 1.30f + 0.05f).coerceIn(0f, 1f)
-                                        lutG = (g * 1.06f + 0.01f).coerceIn(0f, 1f)
-                                        lutB = (b * 0.70f).coerceIn(0f, 1f)
-                                        lutR = ((lutR - 0.5f) * 1.15f + 0.5f).coerceIn(0f, 1f)
-                                        lutG = ((lutG - 0.5f) * 1.15f + 0.5f).coerceIn(0f, 1f)
-                                        lutB = ((lutB - 0.5f) * 1.15f + 0.5f).coerceIn(0f, 1f)
+                                        lutR = (lutR * 1.32f + 0.06f - 0.5f) * 1.16f + 0.5f
+                                        lutG = (lutG * 1.06f + 0.01f - 0.5f) * 1.16f + 0.5f
+                                        lutB = (lutB * 0.68f - 0.5f) * 1.16f + 0.5f
+                                    }
+                                    9 -> { // Fuji Velvia 50
+                                        lutR = lum * (1f - 1.35f) + lutR * 1.35f
+                                        lutG = lum * (1f - 1.35f) + (max(lutG, 0f).pow(0.92f) * 1.08f) * 1.35f
+                                        lutB = lum * (1f - 1.35f) + (max(lutB, 0f).pow(0.90f) * 1.10f) * 1.35f
+                                        lutR = (lutR - 0.5f) * 1.12f + 0.5f
+                                        lutG = (lutG - 0.5f) * 1.12f + 0.5f
+                                        lutB = (lutB - 0.5f) * 1.12f + 0.5f
+                                    }
+                                    10 -> { // Cinematic Emerald
+                                        lutR = (lutR * 0.88f - 0.5f) * 1.20f + 0.5f
+                                        lutG = (lutG * 1.18f + 0.03f - 0.5f) * 1.20f + 0.5f
+                                        lutB = (lutB * 0.92f - 0.5f) * 1.20f + 0.5f
+                                    }
+                                    11 -> { // Pastel Dream
+                                        lutR = max(lutR, 0f).pow(0.88f) * 1.05f * 1.06f
+                                        lutG = max(lutG, 0f).pow(0.88f) * 1.05f
+                                        lutB = max(lutB, 0f).pow(0.88f) * 1.05f * 1.08f
+                                        lutR = max(lum * 0.10f + lutR * 0.90f, 0.08f)
+                                        lutG = max(lum * 0.10f + lutG * 0.90f, 0.08f)
+                                        lutB = max(lum * 0.10f + lutB * 0.90f, 0.08f)
+                                    }
+                                    12 -> { // Warm Autumn Glow
+                                        lutR = (lutR * 1.25f + 0.04f - 0.5f) * 1.14f + 0.5f
+                                        lutG = (lutG * 0.98f - 0.5f) * 1.14f + 0.5f
+                                        lutB = (lutB * 0.75f - 0.5f) * 1.14f + 0.5f
+                                    }
+                                    13 -> { // Sci-Fi Frost
+                                        lutR = (lutR * 0.84f - 0.5f) * 1.22f + 0.5f
+                                        lutG = (lutG * 0.96f - 0.5f) * 1.22f + 0.5f
+                                        lutB = (lutB * 1.30f + 0.06f - 0.5f) * 1.22f + 0.5f
+                                    }
+                                    14 -> { // HDR Ultra Dynamic
+                                        lutR = ((lutR - 0.5f) * 1.30f + 0.5f)
+                                        lutG = ((lutG - 0.5f) * 1.30f + 0.5f)
+                                        lutB = ((lutB - 0.5f) * 1.30f + 0.5f)
+                                        lutR = lum * (1f - 1.28f) + max(lutR, 0f).pow(0.92f) * 1.28f
+                                        lutG = lum * (1f - 1.28f) + max(lutG, 0f).pow(0.92f) * 1.28f
+                                        lutB = lum * (1f - 1.28f) + max(lutB, 0f).pow(0.92f) * 1.28f
+                                    }
+                                    15 -> { // Kodak Portra 400
+                                        lutR = (lutR * 1.10f + 0.02f)
+                                        lutG = (lutG * 1.02f)
+                                        lutB = (lutB * 0.92f)
+                                        lutR = (lum * 0.05f + lutR * 0.95f - 0.5f) * 1.06f + 0.5f
+                                        lutG = (lum * 0.05f + lutG * 0.95f - 0.5f) * 1.06f + 0.5f
+                                        lutB = (lum * 0.05f + lutB * 0.95f - 0.5f) * 1.06f + 0.5f
                                     }
                                 }
                                 r = r * (1f - lutWeight) + lutR * lutWeight

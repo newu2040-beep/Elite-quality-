@@ -1125,6 +1125,36 @@ fun EnhanceConfigModal(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                // Social Media Quick Presets
+                Text("Social Media Fast Presets", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "Instagram (1080p 60fps)" to {
+                            onUpdateConfig { it.copy(targetResolution = ExportResolution.RES_1080P, targetFps = ExportFps.FPS_60, targetBitrate = ExportBitrate.HIGH, targetCodec = ExportCodec.H264, cropRatio = "9:16") }
+                        },
+                        "YouTube 4K Cinema" to {
+                            onUpdateConfig { it.copy(targetResolution = ExportResolution.RES_4K, targetFps = ExportFps.FPS_60, targetBitrate = ExportBitrate.VERY_HIGH, targetCodec = ExportCodec.H264, cropRatio = "16:9") }
+                        },
+                        "TikTok Pro HD" to {
+                            onUpdateConfig { it.copy(targetResolution = ExportResolution.RES_1080P, targetFps = ExportFps.FPS_60, targetBitrate = ExportBitrate.HIGH, targetCodec = ExportCodec.H264, cropRatio = "9:16") }
+                        },
+                        "X / Twitter" to {
+                            onUpdateConfig { it.copy(targetResolution = ExportResolution.RES_1080P, targetFps = ExportFps.FPS_30, targetBitrate = ExportBitrate.STANDARD, targetCodec = ExportCodec.H264, cropRatio = "16:9") }
+                        }
+                    ).forEach { (label, action) ->
+                        SuggestionChip(
+                            onClick = action,
+                            label = { Text(label, fontSize = if (compact.isCompact) 10.5.sp else 11.5.sp, fontWeight = FontWeight.Medium) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(if (compact.isCompact) 8.dp else 12.dp))
+
                 // Target Resolution
                 Text("Output Resolution", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                 Spacer(modifier = Modifier.height(4.dp))

@@ -273,6 +273,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun applySocialPreset(targetResolution: ExportResolution, targetFps: ExportFps, targetBitrate: ExportBitrate, targetCodec: ExportCodec, cropRatio: String) {
+        _enhancementConfig.value = _enhancementConfig.value.copy(
+            targetResolution = targetResolution,
+            targetFps = targetFps,
+            targetBitrate = targetBitrate,
+            targetCodec = targetCodec,
+            cropRatio = cropRatio
+        )
+    }
+
     fun resetColorAdjustment() {
         val resetAdj = ColorAdjustment()
         _colorAdjustment.value = resetAdj

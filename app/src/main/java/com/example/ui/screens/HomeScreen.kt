@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -27,11 +28,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +47,9 @@ import com.example.data.model.DeviceVideoItem
 import com.example.ui.components.InfoBadge
 import com.example.ui.components.LocalCompactUiConfig
 import com.example.ui.components.PermissionRequester
+import com.example.ui.components.SocialMediaAndCapabilitiesDialog
+import com.example.ui.components.SocialMediaPreset
+import com.example.util.VideoThumbnailHelper
 import com.example.ui.viewmodel.MainViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -66,8 +70,11 @@ fun HomeScreen(
     val allExports by viewModel.allExports.collectAsState()
     val deviceVideos by viewModel.deviceVideos.collectAsState()
     val selectedExportPreview by viewModel.selectedExportPreview.collectAsState()
+    val currentMetadata by viewModel.currentMetadata.collectAsState()
 
     var activeHistoryTab by remember { mutableStateOf("Exports") } // "Exports" or "Drafts"
+    var deviceFilterTab by remember { mutableStateOf("All") } // "All", "Enhance", "Pending"
+    var showSocialSpecsDialog by remember { mutableStateOf(false) }
 
     // Real video pickers
     val galleryVideoPicker = rememberLauncherForActivityResult(
@@ -117,6 +124,12 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showSocialSpecsDialog = true },
+                        modifier = Modifier.testTag("home_social_specs_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Info, contentDescription = "Specs & Social Settings")
+                    }
                     IconButton(
                         onClick = onNavigateToPresets,
                         modifier = Modifier.testTag("home_presets_button")
@@ -190,14 +203,14 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(4.dp))
 
                         Text(
-                            text = "Professional color grading, 3D LUTs, GPU pipelines, and AI super-resolution directly on your phone's hardware.",
+                            text = "Professional color grading, 16 3D LUTs, GPU pipelines, RGB Curves, and AI super-resolution directly on your phone's hardware.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = if (compact.isCompact) 16.sp else 20.sp,
                             fontSize = if (compact.isCompact) 12.sp else 13.sp
                         )
 
-                        Spacer(modifier = Modifier.height(if (compact.isCompact) 12.dp else 20.dp))
+                        Spacer(modifier = Modifier.height(if (compact.isCompact) 12.dp else 18.dp))
 
                         // Primary Action: Open Gallery
                         Button(
@@ -231,32 +244,59 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Secondary Action: Pick from Files / Storage
-                        OutlinedButton(
-                            onClick = { fileStoragePicker.launch("video/*") },
-                            shape = RoundedCornerShape(50),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(compact.secondaryButtonHeight)
-                                .testTag("browse_files_button")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.FolderOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(if (compact.isCompact) 18.dp else 20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Browse Local Files",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = if (compact.isCompact) 13.sp else 14.sp
-                            )
+                            // Secondary Action: Pick from Files / Storage
+                            OutlinedButton(
+                                onClick = { fileStoragePicker.launch("video/*") },
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(compact.secondaryButtonHeight)
+                                    .testTag("browse_files_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Files",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = if (compact.isCompact) 12.sp else 13.sp
+                                )
+                            }
+
+                            // Social & Specs Guide Button
+                            OutlinedButton(
+                                onClick = { showSocialSpecsDialog = true },
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier
+                                    .weight(1.3f)
+                                    .height(compact.secondaryButtonHeight)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Specs & Social",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = if (compact.isCompact) 12.sp else 13.sp
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Real On-Device Gallery Videos Row
+            // Real On-Device Gallery Videos Section with Thumbnails & Separate Options
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
@@ -264,23 +304,76 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Videos on Device",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+                        Column {
+                            Text(
+                                text = "Videos on Device",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Text(
+                                text = "Thumbnails & instant 1-tap enhancement",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
                         if (deviceVideos.isNotEmpty()) {
                             Text(
                                 text = "${deviceVideos.size} found",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    // Separate Filter Options: All Videos | Enhance Video | Pending Video
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf(
+                            "All" to "All Videos",
+                            "Enhance" to "Enhance Video",
+                            "Pending" to "Pending Video"
+                        ).forEach { (key, label) ->
+                            val isSelected = deviceFilterTab == key
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                                    .clickable { deviceFilterTab = key }
+                                    .padding(vertical = 7.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = if (compact.isCompact) 10.5.sp else 11.5.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    val filteredVideos = remember(deviceVideos, deviceFilterTab) {
+                        when (deviceFilterTab) {
+                            "Enhance" -> deviceVideos.filter { it.width >= 1920 || it.height >= 1920 }
+                            "Pending" -> deviceVideos.filter { it.durationMs < 120_000 }
+                            else -> deviceVideos
+                        }
+                    }
 
                     if (deviceVideos.isEmpty()) {
                         Surface(
@@ -299,7 +392,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    text = "Tap 'Select Video' above or grant storage access to browse local camera videos",
+                                    text = "Tap 'Select Video' above or grant storage access to browse local device camera videos",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -309,12 +402,17 @@ fun HomeScreen(
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(deviceVideos, key = { it.uri.toString() }) { video ->
-                                DeviceVideoCard(
+                            items(filteredVideos, key = { it.uri.toString() }) { video ->
+                                EnhancedDeviceVideoCard(
                                     video = video,
-                                    onClick = {
+                                    isPending = deviceFilterTab == "Pending",
+                                    onEnhance = {
                                         viewModel.selectVideo(video.uri)
                                         onNavigateToEditor()
+                                    },
+                                    onShowSpecs = {
+                                        viewModel.selectVideo(video.uri)
+                                        showSocialSpecsDialog = true
                                     }
                                 )
                             }
@@ -496,6 +594,26 @@ fun HomeScreen(
         }
     }
 
+    // Supported Video Specs & Social Presets Dialog
+    if (showSocialSpecsDialog) {
+        SocialMediaAndCapabilitiesDialog(
+            currentMetadata = currentMetadata,
+            onDismiss = { showSocialSpecsDialog = false },
+            onApplySocialPreset = { preset ->
+                viewModel.applySocialPreset(
+                    targetResolution = preset.targetResolution,
+                    targetFps = preset.targetFps,
+                    targetBitrate = preset.targetBitrate,
+                    targetCodec = preset.targetCodec,
+                    cropRatio = preset.cropRatio
+                )
+                if (viewModel.currentVideoUri.value != null) {
+                    onNavigateToEditor()
+                }
+            }
+        )
+    }
+
     // Full Real-Time Export Playback & Quality Detail Dialog
     selectedExportPreview?.let { export ->
         ExportPreviewDialog(
@@ -503,6 +621,171 @@ fun HomeScreen(
             onDismiss = { viewModel.setExportPreview(null) },
             onShare = { viewModel.shareExport(export) }
         )
+    }
+}
+
+@Composable
+fun EnhancedDeviceVideoCard(
+    video: DeviceVideoItem,
+    isPending: Boolean = false,
+    onEnhance: () -> Unit,
+    onShowSpecs: () -> Unit
+) {
+    val context = LocalContext.current
+    val compact = LocalCompactUiConfig.current
+    var thumbnailBitmap by remember(video.uri) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(video.uri) {
+        thumbnailBitmap = VideoThumbnailHelper.getThumbnail(context, video.uri)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+        modifier = Modifier
+            .width(if (compact.isCompact) 170.dp else 205.dp)
+            .clickable { onEnhance() }
+    ) {
+        Column(modifier = Modifier.padding(if (compact.isCompact) 8.dp else 12.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (compact.isCompact) 95.dp else 115.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                if (thumbnailBitmap != null) {
+                    Image(
+                        bitmap = thumbnailBitmap!!.asImageBitmap(),
+                        contentDescription = video.displayName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(if (compact.isCompact) 32.dp else 40.dp)
+                    )
+                }
+
+                // Status Badge Overlay
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(5.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isPending) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.9f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = if (isPending) "PENDING" else video.resolutionBadge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 9.sp
+                    )
+                }
+
+                // Duration Overlay
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(5.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.Black.copy(alpha = 0.75f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = video.formattedDuration,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = if (compact.isCompact) 9.sp else 10.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = video.displayName,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                fontSize = if (compact.isCompact) 12.sp else 13.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                InfoBadge(text = "${video.width}×${video.height}")
+                Text(
+                    text = video.formattedSize,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = if (compact.isCompact) 10.sp else 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Separate Action Buttons: "Enhance Video" and "Pending / Specs"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Button(
+                    onClick = onEnhance,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier
+                        .weight(1.3f)
+                        .height(30.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Enhance",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.5.sp
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onShowSpecs,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                    modifier = Modifier
+                        .weight(0.9f)
+                        .height(30.dp)
+                ) {
+                    Text(
+                        text = "Specs",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -772,84 +1055,6 @@ fun ExportPreviewDialog(
             }
         }
     )
-}
-
-@Composable
-fun DeviceVideoCard(
-    video: DeviceVideoItem,
-    onClick: () -> Unit
-) {
-    val compact = LocalCompactUiConfig.current
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-        modifier = Modifier
-            .width(if (compact.isCompact) 140.dp else 175.dp)
-            .clickable { onClick() }
-    ) {
-        Column(modifier = Modifier.padding(if (compact.isCompact) 8.dp else 12.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (compact.isCompact) 80.dp else 100.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayCircle,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.size(if (compact.isCompact) 28.dp else 36.dp)
-                )
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.75f))
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = video.formattedDuration,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = if (compact.isCompact) 9.sp else 10.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = video.displayName,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                fontSize = if (compact.isCompact) 11.5.sp else 12.sp,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(3.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                InfoBadge(text = video.resolutionBadge, isHighlight = video.width >= 3800)
-                Text(
-                    text = video.formattedSize,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = if (compact.isCompact) 9.5.sp else 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
 }
 
 @Composable

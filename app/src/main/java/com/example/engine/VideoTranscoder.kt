@@ -144,92 +144,84 @@ object VideoTranscoder {
         var encoder: MediaCodec? = null
         var muxer: MediaMuxer? = null
 
-        var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
-        var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
-        var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
         var decoderSurfaceTexture: SurfaceTexture? = null
         var decoderSurface: Surface? = null
-        var encoderInputSurface: Surface? = null
-        var glProgram = 0
         var decoderTextureId = 0
+        var encoderInputSurface: Surface? = null
+
+        var eglDisplay = EGL14.EGL_NO_DISPLAY
+        var eglContext = EGL14.EGL_NO_CONTEXT
+        var eglSurface = EGL14.EGL_NO_SURFACE
+        var glProgram = 0
 
         val frameSyncObject = Object()
         var frameAvailable = false
 
         return try {
-            // 1. Setup Source Video Extractor
-            videoExtractor = MediaExtractor().apply {
-                val pfd = context.contentResolver.openFileDescriptor(sourceUri, "r")
-                if (pfd != null) {
-                    setDataSource(pfd.fileDescriptor)
-                    pfd.close()
-                } else {
-                    setDataSource(context, sourceUri, null)
-                }
+            // 1. Setup MediaExtractors
+            videoExtractor = MediaExtractor()
+            val pfdVideo = context.contentResolver.openFileDescriptor(sourceUri, "r")
+            if (pfdVideo != null) {
+                videoExtractor.setDataSource(pfdVideo.fileDescriptor)
+                pfdVideo.close()
+            } else {
+                videoExtractor.setDataSource(context, sourceUri, null)
             }
 
             var videoTrackIndex = -1
+            var audioTrackIndex = -1
             var videoInputFormat: MediaFormat? = null
-            var sourceDurationUs = 1_000_000L
+            var sourceAudioFormat: MediaFormat? = null
 
             for (i in 0 until videoExtractor.trackCount) {
                 val format = videoExtractor.getTrackFormat(i)
                 val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
-                if (mime.startsWith("video/")) {
+                if (mime.startsWith("video/") && videoTrackIndex == -1) {
                     videoTrackIndex = i
                     videoInputFormat = format
-                    if (format.containsKey(MediaFormat.KEY_DURATION)) {
-                        sourceDurationUs = format.getLong(MediaFormat.KEY_DURATION)
-                    }
-                    break
+                } else if (mime.startsWith("audio/") && audioTrackIndex == -1) {
+                    audioTrackIndex = i
+                    sourceAudioFormat = format
                 }
             }
 
-            if (videoTrackIndex < 0 || videoInputFormat == null) {
+            if (videoTrackIndex == -1 || videoInputFormat == null) {
                 return false
             }
+
             videoExtractor.selectTrack(videoTrackIndex)
 
-            // Setup Source Audio Extractor (prepared before muxer starts)
-            var audioTrackIndex = -1
-            var sourceAudioFormat: MediaFormat? = null
-            if (config.preserveAudio && !config.muteAudio) {
-                try {
-                    audioExtractor = MediaExtractor().apply {
-                        val pfd = context.contentResolver.openFileDescriptor(sourceUri, "r")
-                        if (pfd != null) {
-                            setDataSource(pfd.fileDescriptor)
-                            pfd.close()
-                        } else {
-                            setDataSource(context, sourceUri, null)
-                        }
-                    }
-                    for (i in 0 until audioExtractor.trackCount) {
-                        val format = audioExtractor.getTrackFormat(i)
-                        val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
-                        if (mime.startsWith("audio/")) {
-                            audioTrackIndex = i
-                            sourceAudioFormat = format
-                            break
-                        }
-                    }
-                    if (audioTrackIndex >= 0) {
-                        audioExtractor.selectTrack(audioTrackIndex)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+            // Setup audio extractor if audio track exists
+            if (audioTrackIndex >= 0) {
+                audioExtractor = MediaExtractor()
+                val pfdAudio = context.contentResolver.openFileDescriptor(sourceUri, "r")
+                if (pfdAudio != null) {
+                    audioExtractor.setDataSource(pfdAudio.fileDescriptor)
+                    pfdAudio.close()
+                } else {
+                    audioExtractor.setDataSource(context, sourceUri, null)
                 }
+                audioExtractor.selectTrack(audioTrackIndex)
             }
 
-            val totalEstimatedFrames = max(30L, (sourceDurationUs / 1_000_000L) * targetFps)
+            val sourceDurationUs = videoInputFormat.let {
+                if (it.containsKey(MediaFormat.KEY_DURATION)) it.getLong(MediaFormat.KEY_DURATION)
+                else 10_000_000L
+            }.coerceAtLeast(1_000_000L)
 
-            // 2. Setup Video Encoder (Surface input)
+            val totalEstimatedFrames = (sourceDurationUs / 1_000_000L) * targetFps
+
+            // 2. Setup Target Video Encoder
             val encoderMime = MediaFormat.MIMETYPE_VIDEO_AVC
             val encoderFormat = MediaFormat.createVideoFormat(encoderMime, targetWidth, targetHeight).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, targetBitrateBps.toInt().coerceIn(1_000_000, 50_000_000))
+                setInteger(MediaFormat.KEY_BIT_RATE, targetBitrateBps.toInt().coerceIn(1_000_000, 45_000_000))
                 setInteger(MediaFormat.KEY_FRAME_RATE, targetFps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                try {
+                    setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh)
+                    setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel41)
+                } catch (_: Exception) {}
             }
 
             encoder = MediaCodec.createEncoderByType(encoderMime)
@@ -359,12 +351,14 @@ object VideoTranscoder {
                             decoder.releaseOutputBuffer(decoderStatus, true)
 
                             // Wait for SurfaceTexture to receive decoded frame
+                            val deadline = System.currentTimeMillis() + 400L
                             synchronized(frameSyncObject) {
-                                while (!frameAvailable) {
+                                while (!frameAvailable && System.currentTimeMillis() < deadline) {
                                     try {
-                                        frameSyncObject.wait(250)
+                                        frameSyncObject.wait(40)
+                                    } catch (_: InterruptedException) {
                                         break
-                                    } catch (_: InterruptedException) {}
+                                    }
                                 }
                             }
 
@@ -373,7 +367,7 @@ object VideoTranscoder {
                                 decoderSurfaceTexture.getTransformMatrix(texMatrix)
                             } catch (_: Exception) {}
 
-                            // Render frame through OpenGL with full color and AI processing
+                            // Render frame through OpenGL with full color, LUT, and AI processing
                             EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
                             GLES20.glViewport(0, 0, targetWidth, targetHeight)
                             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
@@ -427,37 +421,39 @@ object VideoTranscoder {
 
                 // Drain Encoder Output -> Muxer
                 var encoderStatus = encoder.dequeueOutputBuffer(encoderBufferInfo, TIMEOUT_USEC)
-                while (encoderStatus >= 0) {
-                    val encodedData = encoder.getOutputBuffer(encoderStatus)
-                    if (encodedData != null) {
-                        if ((encoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-                            encoderBufferInfo.size = 0
+                while (encoderStatus >= 0 || encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        if (!muxerStarted) {
+                            val newFormat = encoder.outputFormat
+                            muxerVideoTrackIndex = muxer.addTrack(newFormat)
+                            if (audioTrackIndex >= 0 && sourceAudioFormat != null) {
+                                muxerAudioTrackIndex = muxer.addTrack(sourceAudioFormat)
+                            }
+                            muxer.start()
+                            muxerStarted = true
                         }
+                    } else if (encoderStatus >= 0) {
+                        val encodedData = encoder.getOutputBuffer(encoderStatus)
+                        if (encodedData != null) {
+                            if ((encoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                encoderBufferInfo.size = 0
+                            }
 
-                        if (encoderBufferInfo.size > 0 && muxerStarted) {
-                            encodedData.position(encoderBufferInfo.offset)
-                            encodedData.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
-                            muxer.writeSampleData(muxerVideoTrackIndex, encodedData, encoderBufferInfo)
-                        }
+                            if (encoderBufferInfo.size > 0 && muxerStarted) {
+                                encodedData.position(encoderBufferInfo.offset)
+                                encodedData.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
+                                muxer.writeSampleData(muxerVideoTrackIndex, encodedData, encoderBufferInfo)
+                            }
 
-                        val isEncoderEos = (encoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                        encoder.releaseOutputBuffer(encoderStatus, false)
-                        if (isEncoderEos) {
-                            encoderDone = true
-                            break
+                            val isEncoderEos = (encoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                            encoder.releaseOutputBuffer(encoderStatus, false)
+                            if (isEncoderEos) {
+                                encoderDone = true
+                                break
+                            }
                         }
                     }
                     encoderStatus = encoder.dequeueOutputBuffer(encoderBufferInfo, TIMEOUT_USEC)
-                }
-
-                if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    val newFormat = encoder.outputFormat
-                    muxerVideoTrackIndex = muxer.addTrack(newFormat)
-                    if (audioTrackIndex >= 0 && sourceAudioFormat != null) {
-                        muxerAudioTrackIndex = muxer.addTrack(sourceAudioFormat)
-                    }
-                    muxer.start()
-                    muxerStarted = true
                 }
             }
 
@@ -580,21 +576,23 @@ object VideoTranscoder {
 
                 // Drain encoder
                 var status = encoder.dequeueOutputBuffer(encoderBufferInfo, TIMEOUT_USEC)
-                while (status >= 0) {
-                    val encoded = encoder.getOutputBuffer(status)
-                    if (encoded != null && encoderBufferInfo.size > 0 && muxerStarted) {
-                        encoded.position(encoderBufferInfo.offset)
-                        encoded.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
-                        muxer.writeSampleData(videoTrack, encoded, encoderBufferInfo)
+                while (status >= 0 || status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        if (!muxerStarted) {
+                            videoTrack = muxer.addTrack(encoder.outputFormat)
+                            muxer.start()
+                            muxerStarted = true
+                        }
+                    } else if (status >= 0) {
+                        val encoded = encoder.getOutputBuffer(status)
+                        if (encoded != null && encoderBufferInfo.size > 0 && muxerStarted) {
+                            encoded.position(encoderBufferInfo.offset)
+                            encoded.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
+                            muxer.writeSampleData(videoTrack, encoded, encoderBufferInfo)
+                        }
+                        encoder.releaseOutputBuffer(status, false)
                     }
-                    encoder.releaseOutputBuffer(status, false)
                     status = encoder.dequeueOutputBuffer(encoderBufferInfo, TIMEOUT_USEC)
-                }
-
-                if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    videoTrack = muxer.addTrack(encoder.outputFormat)
-                    muxer.start()
-                    muxerStarted = true
                 }
 
                 frameIdx++
@@ -607,14 +605,22 @@ object VideoTranscoder {
 
             // Drain remaining
             var status = encoder.dequeueOutputBuffer(encoderBufferInfo, TIMEOUT_USEC * 2)
-            while (status >= 0) {
-                val encoded = encoder.getOutputBuffer(status)
-                if (encoded != null && encoderBufferInfo.size > 0 && muxerStarted) {
-                    encoded.position(encoderBufferInfo.offset)
-                    encoded.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
-                    muxer.writeSampleData(videoTrack, encoded, encoderBufferInfo)
+            while (status >= 0 || status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                if (status == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    if (!muxerStarted) {
+                        videoTrack = muxer.addTrack(encoder.outputFormat)
+                        muxer.start()
+                        muxerStarted = true
+                    }
+                } else if (status >= 0) {
+                    val encoded = encoder.getOutputBuffer(status)
+                    if (encoded != null && encoderBufferInfo.size > 0 && muxerStarted) {
+                        encoded.position(encoderBufferInfo.offset)
+                        encoded.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
+                        muxer.writeSampleData(videoTrack, encoded, encoderBufferInfo)
+                    }
+                    encoder.releaseOutputBuffer(status, false)
                 }
-                encoder.releaseOutputBuffer(status, false)
                 status = encoder.dequeueOutputBuffer(encoderBufferInfo, TIMEOUT_USEC)
             }
 

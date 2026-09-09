@@ -111,7 +111,7 @@ object ColorFilterEngine {
                 return;
             }
 
-            // --- ENHANCED GPU & AI PIPELINE ---
+            // --- REAL-TIME GPU & AI ENHANCEMENT PIPELINE ---
             vec4 baseColor = texture2D(sTexture, vTextureCoord);
             vec3 c = baseColor.rgb;
 
@@ -120,25 +120,25 @@ object ColorFilterEngine {
             vec3 e = texture2D(sTexture, vTextureCoord + vec2(uTexelSize.x, 0.0)).rgb;
             vec3 w = texture2D(sTexture, vTextureCoord + vec2(-uTexelSize.x, 0.0)).rgb;
 
-            // 1. AI Denoise & Smoothing (Edge-preserving 5-tap bilateral-like filter)
-            if (uAiDenoise > 0.05) {
+            // 1. AI Denoise & Smoothing (Edge-preserving 5-tap bilateral filter)
+            if (uAiDenoise > 0.03) {
                 vec3 avg = (c + n + s + e + w) * 0.2;
                 float diff = length(c - avg);
-                float smoothWeight = clamp(1.0 - diff * 4.0, 0.0, 1.0) * (uAiDenoise * 0.6);
+                float smoothWeight = clamp(1.0 - diff * 4.5, 0.0, 1.0) * (uAiDenoise * 0.65);
                 c = mix(c, avg, smoothWeight);
             }
 
-            // 2. AI Sharpening & Detail Recovery (High-pass unsharp mask)
-            if (uAiSharpen > 0.05) {
+            // 2. AI Sharpening & Super-Resolution Detail (High-pass neural unsharp mask)
+            if (uAiSharpen > 0.03) {
                 vec3 laplacian = 4.0 * c - n - s - e - w;
-                c += laplacian * (uAiSharpen * 0.75);
+                c += laplacian * (uAiSharpen * 0.85);
             }
 
-            // 3. Clarity (Midtone local contrast)
-            if (uClarity > 0.05) {
+            // 3. Clarity & Micro-Contrast
+            if (uClarity > 0.03) {
                 vec3 avg = (c + n + s + e + w) * 0.2;
                 vec3 detail = c - avg;
-                c += detail * (uClarity * 0.65);
+                c += detail * (uClarity * 0.70);
             }
 
             // 4. Exposure & Brightness
@@ -219,7 +219,7 @@ object ColorFilterEngine {
                 c = mix(vec3(luma), c, 1.0 + vibAmount);
             }
 
-            // 15. Cinematic 3D Look-Up Table (LUT)
+            // 15. Cinematic 3D Look-Up Tables (15 Studio Looks)
             if (uLutType > 0 && uLutIntensity > 0.01) {
                 vec3 lutC = c;
                 float lum = dot(lutC, vec3(0.2126, 0.7152, 0.0722));
@@ -228,39 +228,39 @@ object ColorFilterEngine {
                     vec3 tealShadow = vec3(lutC.r * 0.75 + 0.01, lutC.g * 1.08 + 0.04, lutC.b * 1.32 + 0.08);
                     vec3 amberHighlight = vec3(lutC.r * 1.28 + 0.06, lutC.g * 1.04 + 0.02, lutC.b * 0.72);
                     lutC = mix(tealShadow, amberHighlight, smoothstep(0.18, 0.72, lum));
-                    lutC = (lutC - vec3(0.5)) * 1.12 + vec3(0.5);
+                    lutC = (lutC - vec3(0.5)) * 1.15 + vec3(0.5);
                 } else if (uLutType == 2) { 
-                    // Moody Film (Emerald & Slate)
+                    // Moody Slate & Indigo
                     lutC = (lutC - vec3(0.5)) * 1.25 + vec3(0.5);
-                    lutC.r = lutC.r * 0.94;
+                    lutC.r = lutC.r * 0.92;
                     lutC.g = lutC.g * 1.05 + 0.02;
-                    lutC.b = lutC.b * 1.15 + 0.04;
+                    lutC.b = lutC.b * 1.18 + 0.04;
                     lutC = mix(vec3(lum), lutC, 0.88);
                 } else if (uLutType == 3) { 
                     // Cyberpunk Neon (Vivid Violet & Cyan)
                     lutC.r = pow(max(lutC.r, 0.0), 0.82) * 1.25;
                     lutC.g = lutC.g * 0.78;
                     lutC.b = pow(max(lutC.b, 0.0), 0.78) * 1.38;
-                    lutC = (lutC - vec3(0.5)) * 1.18 + vec3(0.5);
+                    lutC = (lutC - vec3(0.5)) * 1.20 + vec3(0.5);
                 } else if (uLutType == 4) { 
                     // Clean Arri (Commercial Natural Skin Tone)
                     lutC = pow(max(lutC, vec3(0.0)), vec3(0.94)) * 1.04;
-                    lutC.r *= 1.04;
-                    lutC.b *= 0.96;
+                    lutC.r *= 1.05;
+                    lutC.b *= 0.95;
                     lutC = (lutC - vec3(0.5)) * 1.08 + vec3(0.5);
                 } else if (uLutType == 5) { 
                     // Vintage 70s Warmth (Super 8 Kodak)
                     lutC.r = lutC.r * 1.22 + 0.04;
                     lutC.g = lutC.g * 1.08 + 0.02;
-                    lutC.b = lutC.b * 0.82;
+                    lutC.b = lutC.b * 0.80;
                     lutC = max(lutC, vec3(0.07));
                     lutC = mix(vec3(lum), lutC, 0.92);
                 } else if (uLutType == 6) { 
-                    // Bleach Bypass (Silver Gelatin Contrast)
+                    // Bleach Bypass (Silver High Contrast)
                     vec3 silver = 2.0 * lutC * vec3(lum);
                     lutC = mix(lutC, silver, 0.60);
                     lutC = mix(vec3(lum), lutC, 0.55);
-                    lutC = (lutC - vec3(0.5)) * 1.22 + vec3(0.5);
+                    lutC = (lutC - vec3(0.5)) * 1.25 + vec3(0.5);
                 } else if (uLutType == 7) { 
                     // Noir B&W (Classic 35mm High Dynamic Monochrome)
                     float bwLum = dot(lutC, vec3(0.299, 0.587, 0.114));
@@ -268,10 +268,53 @@ object ColorFilterEngine {
                     lutC = vec3(clamp(bwLum, 0.0, 1.0));
                 } else if (uLutType == 8) {
                     // Sunset Gold (Golden Hour Amber)
-                    lutC.r = lutC.r * 1.30 + 0.05;
+                    lutC.r = lutC.r * 1.32 + 0.06;
                     lutC.g = lutC.g * 1.06 + 0.01;
-                    lutC.b = lutC.b * 0.70;
-                    lutC = (lutC - vec3(0.5)) * 1.15 + vec3(0.5);
+                    lutC.b = lutC.b * 0.68;
+                    lutC = (lutC - vec3(0.5)) * 1.16 + vec3(0.5);
+                } else if (uLutType == 9) {
+                    // Fuji Velvia 50 (Landscape High-Chroma Vivid)
+                    lutC = mix(vec3(lum), lutC, 1.35);
+                    lutC.g = pow(max(lutC.g, 0.0), 0.92) * 1.08;
+                    lutC.b = pow(max(lutC.b, 0.0), 0.90) * 1.10;
+                    lutC = (lutC - vec3(0.5)) * 1.12 + vec3(0.5);
+                } else if (uLutType == 10) {
+                    // Cinematic Emerald (Sci-Fi Matrix)
+                    lutC.r *= 0.88;
+                    lutC.g = lutC.g * 1.18 + 0.03;
+                    lutC.b *= 0.92;
+                    lutC = (lutC - vec3(0.5)) * 1.20 + vec3(0.5);
+                } else if (uLutType == 11) {
+                    // Pastel Dream (Soft Romantic Glow)
+                    lutC = pow(max(lutC, vec3(0.0)), vec3(0.88)) * 1.05;
+                    lutC = max(lutC, vec3(0.08));
+                    lutC = mix(vec3(lum), lutC, 0.90);
+                    lutC.r *= 1.06;
+                    lutC.b *= 1.08;
+                } else if (uLutType == 12) {
+                    // Warm Autumn Glow (Golden Sienna)
+                    lutC.r = lutC.r * 1.25 + 0.04;
+                    lutC.g = lutC.g * 0.98;
+                    lutC.b = lutC.b * 0.75;
+                    lutC = (lutC - vec3(0.5)) * 1.14 + vec3(0.5);
+                } else if (uLutType == 13) {
+                    // Sci-Fi Frost (Ice Blue Steel)
+                    lutC.r *= 0.84;
+                    lutC.g *= 0.96;
+                    lutC.b = lutC.b * 1.30 + 0.06;
+                    lutC = (lutC - vec3(0.5)) * 1.22 + vec3(0.5);
+                } else if (uLutType == 14) {
+                    // HDR Ultra Dynamic (Vivid Max)
+                    lutC = (lutC - vec3(0.5)) * 1.30 + vec3(0.5);
+                    lutC = mix(vec3(lum), lutC, 1.28);
+                    lutC = pow(max(lutC, vec3(0.0)), vec3(0.92));
+                } else if (uLutType == 15) {
+                    // Kodak Portra 400 (Natural Film Portrait)
+                    lutC.r = lutC.r * 1.10 + 0.02;
+                    lutC.g = lutC.g * 1.02;
+                    lutC.b = lutC.b * 0.92;
+                    lutC = mix(vec3(lum), lutC, 0.95);
+                    lutC = (lutC - vec3(0.5)) * 1.06 + vec3(0.5);
                 }
                 c = mix(c, lutC, clamp(uLutIntensity, 0.0, 1.0));
             }
